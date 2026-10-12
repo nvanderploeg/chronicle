@@ -16,7 +16,7 @@ services:
       retries: 30
 
   app:
-    image: ghcr.io/nvanderploeg/agent-work-track:${WORKSTATE_TAG:-latest}
+    image: ghcr.io/nvanderploeg/work-state:${WORKSTATE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       db:

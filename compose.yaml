@@ -27,7 +27,7 @@ services:
       timeout: 5s
       retries: 20
   app:
-    image: ghcr.io/nvanderploeg/agent-work-track:latest
+    image: ghcr.io/nvanderploeg/work-state:latest
     build: .
     restart: unless-stopped
     depends_on:

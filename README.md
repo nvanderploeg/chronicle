@@ -49,8 +49,8 @@ _The simulator (`scripts/simulate.mjs`) driving the dashboard through a build-it
 ### Steps
 
 ```sh
-git clone https://github.com/nvanderploeg/agent-work-track
-cd agent-work-track
+git clone https://github.com/nvanderploeg/work-state
+cd work-state
 scripts/install.sh --with-server
 ```
 
@@ -334,7 +334,7 @@ The full contract, with types, write semantics and the stream format, is in
 
 ## Deploy
 
-The image is published as `ghcr.io/nvanderploeg/agent-work-track`. [`DEPLOY.md`](DEPLOY.md) covers
+The image is published as `ghcr.io/nvanderploeg/work-state`. [`DEPLOY.md`](DEPLOY.md) covers
 the production stack (`deploy/compose.prod.yml`, an nginx server block and certbot) for
 `workstate.nanzero.com`, including upgrades and rollback with `WORKSTATE_TAG`.
 

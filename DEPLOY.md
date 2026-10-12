@@ -1,7 +1,7 @@
 # Deploying workstate
 
 Target: the nanzero server, `workstate.nanzero.com`, behind system nginx. The image is
-`ghcr.io/nvanderploeg/agent-work-track`, built by `.github/workflows/docker.yml`.
+`ghcr.io/nvanderploeg/work-state`, built by `.github/workflows/docker.yml`.
 
 1. DNS: add an A record for `workstate.nanzero.com` pointing at the server.
 2. Copy `deploy/compose.prod.yml` and `deploy/workstate.env.example` to the server (keep the

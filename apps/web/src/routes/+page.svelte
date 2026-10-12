@@ -145,8 +145,8 @@
 		<section id="install">
 			<h2><span class="n">01</span>Install</h2>
 			<pre><code
-					>git clone https://github.com/nvanderploeg/agent-work-track
-cd agent-work-track && scripts/install.sh</code
+					>git clone https://github.com/nvanderploeg/work-state
+cd work-state && scripts/install.sh</code
 				></pre>
 			<p>
 				The installer adds the <code>workstate</code> skill and MCP server to your agent setup. Pass flags
@@ -257,9 +257,7 @@ cd agent-work-track && scripts/install.sh</code
 	</main>
 
 	<footer>
-		<a href="https://github.com/nvanderploeg/agent-work-track"
-			>github.com/nvanderploeg/agent-work-track</a
-		>
+		<a href="https://github.com/nvanderploeg/work-state">github.com/nvanderploeg/work-state</a>
 	</footer>
 </div>
 
