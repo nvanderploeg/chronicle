@@ -389,6 +389,8 @@ describe('createProjectStream', () => {
 		const stream = await createProjectStream(id, { idleMs: 100, heartbeatMs: 30 });
 		expect(stream).not.toBeNull();
 		const reader = stream!.getReader();
+		const opening = await reader.read();
+		expect(new TextDecoder().decode(opening.value)).toBe(': ok\n\n');
 		const first = await reader.read();
 		expect(first.done).toBe(false);
 		expect(new TextDecoder().decode(first.value)).toContain(': ping\n\n');

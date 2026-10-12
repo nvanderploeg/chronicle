@@ -93,6 +93,7 @@ export async function createProjectStream(
 			controller = c;
 			unsubscribe = subscribe(projectId, onLive);
 			armIdle();
+			send(': ok\n\n');
 			try {
 				if (since !== undefined) {
 					for (const event of await eventsSince(projectId, since)) {

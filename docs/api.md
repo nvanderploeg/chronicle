@@ -141,6 +141,7 @@ Writes (🔑) need `Authorization: Bearer <writeKey>` of the project that owns t
 
 - Replay: with `Last-Event-ID: N` or `?since=N`, first send every project event with `seq > N` in order, then live events. Without either, live only.
 - Event frame: `id: <seq>\nevent: <type>\ndata: <JSON payload>\n\n` — `payload` as in `WorkstateEvent`.
+- Opening: `: ok\n\n` as soon as the stream opens, before any replay.
 - Heartbeat: `: ping\n\n` every `WORKSTATE_HEARTBEAT_MS` (default 25 000).
 - Idle: deadline = max(project `lastWriteAt`, stream open time) + `WORKSTATE_IDLE_MS` (default 14 400 000); each published write resets it. At the deadline send `event: idle\ndata: {}\n\n` and close the stream.
 
