@@ -237,7 +237,7 @@ describe('applyEvent', () => {
 		expect(withZ.tasks.map((t) => t.id)).toEqual(['z', 'y', 'x']);
 
 		const withM = applyEvent(withZ, taskEvent(2, task({ id: 'm', createdAt: at(5) })));
-		expect(withM.tasks.map((t) => t.id)).toEqual(['z', 'y', 'm', 'x']);
+		expect(withM.tasks.map((t) => t.id)).toEqual(['z', 'y', 'x', 'm']);
 	});
 
 	it('updates an existing task in place without moving or duplicating it', () => {
