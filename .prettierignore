@@ -7,3 +7,4 @@ dist
 /docs/
 .claude/
 skills/
+.playwright-mcp/

@@ -156,3 +156,4 @@ build/
 
 # Deployment secrets
 deploy/workstate.env
+.playwright-mcp/
