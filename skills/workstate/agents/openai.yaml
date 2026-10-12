@@ -1,0 +1,5 @@
+interface:
+  display_name: "Workstate"
+  short_description: "Show multi-step work live on a workstate dashboard"
+policy:
+  allow_implicit_invocation: true
