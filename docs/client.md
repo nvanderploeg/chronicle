@@ -140,4 +140,4 @@ workstate doctor [--cwd dir]
 
 - `ok: true` → one text content item, `JSON.stringify(value)`.
 - `ok: false` → one text content item, `workstate: <warning>`. Never `isError`.
-- Each tool has a one-sentence description an agent can act on; `start_task`'s says to show the returned `url` to the user once.
+- Each tool has a one-sentence description an agent can act on; `start_task`'s says to print the returned `url` as soon as work starts and try once to open it in a browser.

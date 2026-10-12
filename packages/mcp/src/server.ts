@@ -48,7 +48,7 @@ export function createServer(client: WorkstateClient = createClient()): McpServe
 		'start_task',
 		{
 			description:
-				"Start tracking a multi-step task on this repo's workstate dashboard and return its url; show that url to the user once.",
+				"Start tracking a multi-step task on this repo's workstate dashboard and return its url; print that url to the user as soon as work starts and try once to open it in their browser.",
 			inputSchema: {
 				title: z.string(),
 				summary: z.string().optional(),

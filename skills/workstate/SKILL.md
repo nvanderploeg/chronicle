@@ -15,11 +15,12 @@ A workstate dashboard shows a task as steps and nested subtasks, live. The site 
 
 ## Track the work
 
-1. **Start.** Call `start_task` with a title, a one-line summary and the planned steps. Keys are short and stable (`step-1`, or a slug like `parser`); they are the addresses every later write uses. Show the returned `url` to the user once.
-2. **Update at each transition.** `update_step` with the step's `path`, its new `state`, a short `note` and `tags` where they help (`round 2`, `opus`). A state change clears the note unless you pass one. Subtasks are nodes below a step: `path: "step-1/tests"` creates it, and any missing ancestor.
-3. **Hand off.** Any agent holding the `taskId` may write any node; the last write wins. Put `workstate: task <taskId>` and the node path the subagent works under in every subagent brief. Subagents add subtasks under that path.
-4. **Re-sync.** After context compaction, call `get_task` for the real state of every node before writing again.
-5. **Finish.** Set the task's state with `update_task` to a done-, failed- or blocked-kind state: `done`, `failed` or `needs_input` in the default preset. Entering a done-kind state makes the dashboard celebrate and collapse the task into a badge.
+1. **Start.** Call `start_task` with a title, a one-line summary and the planned steps. Keys are short and stable (`step-1`, or a slug like `parser`); they are the addresses every later write uses.
+2. **Hand over the link.** In your next message to the user, before any of the real work, print the returned `url` as a link. Also try once to open it in their browser (`xdg-open`, `open` or `start`, in the background, output discarded); if that fails or there is no display, the printed link is enough. Do this once per task, not on later updates.
+3. **Update at each transition.** `update_step` with the step's `path`, its new `state`, a short `note` and `tags` where they help (`round 2`, `opus`). A state change clears the note unless you pass one. Subtasks are nodes below a step: `path: "step-1/tests"` creates it, and any missing ancestor.
+4. **Hand off.** Any agent holding the `taskId` may write any node; the last write wins. Put `workstate: task <taskId>` and the node path the subagent works under in every subagent brief. Subagents add subtasks under that path.
+5. **Re-sync.** After context compaction, call `get_task` for the real state of every node before writing again.
+6. **Finish.** Set the task's state with `update_task` to a done-, failed- or blocked-kind state: `done`, `failed` or `needs_input` in the default preset. Entering a done-kind state makes the dashboard celebrate and collapse the task into a badge.
 
 States are keys from the project's config. The default preset:
 
