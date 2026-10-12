@@ -1,0 +1,24 @@
+{
+	"name": "@workstate/cli",
+	"version": "0.1.0",
+	"type": "module",
+	"bin": {
+		"workstate": "dist/index.js"
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"check": "tsc --noEmit",
+		"test": "vitest run --passWithNoTests"
+	},
+	"dependencies": {
+		"@workstate/client": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^22",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.8"
+	}
+}
