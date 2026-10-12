@@ -3,6 +3,7 @@ import { readBody, route } from '#lib/server/api.ts';
 import { generateWriteKey, hashWriteKey } from '#lib/server/auth.ts';
 import { insertProject } from '#lib/server/store.ts';
 import { parseProjectCreate } from '#lib/server/validate.ts';
+import { publicOrigin } from '#lib/server/origin.ts';
 
 export const POST: RequestHandler = route(async ({ request, url }) => {
 	const { name, config } = parseProjectCreate(await readBody(request));
@@ -17,5 +18,8 @@ export const POST: RequestHandler = route(async ({ request, url }) => {
 		createdAt: now,
 		lastWriteAt: now
 	});
-	return Response.json({ id, writeKey, url: `${url.origin}/p/${id}`, config }, { status: 201 });
+	return Response.json(
+		{ id, writeKey, url: `${publicOrigin(url)}/p/${id}`, config },
+		{ status: 201 }
+	);
 });
