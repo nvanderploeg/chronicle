@@ -25,11 +25,20 @@ function readJson(file) {
 	}
 }
 
+// Write through symlinks and keep an existing file's mode: settings files can hold tokens.
 function writeAtomic(file, text, mode) {
-	fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-	const tmp = `${file}.tmp-${process.pid}`;
-	fs.writeFileSync(tmp, text, { mode });
-	fs.renameSync(tmp, file);
+	let target = file;
+	let finalMode = mode;
+	try {
+		target = fs.realpathSync(file);
+		finalMode = fs.statSync(target).mode & 0o777;
+	} catch {
+		fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+	}
+	const tmp = `${target}.tmp-${process.pid}`;
+	fs.writeFileSync(tmp, text, { mode: finalMode });
+	fs.chmodSync(tmp, finalMode);
+	fs.renameSync(tmp, target);
 }
 
 function loadManifest() {
