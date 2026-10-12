@@ -153,3 +153,6 @@ build/
 
 # Agent worktrees
 .claude/
+
+# Deployment secrets
+deploy/workstate.env

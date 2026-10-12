@@ -26,5 +26,17 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+  app:
+    image: ghcr.io/nvanderploeg/agent-work-track:latest
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - '${WORKSTATE_PORT:-3280}:3000'
+    environment:
+      DATABASE_URL: mysql://workstate:${MYSQL_PASSWORD:-workstate}@db:3306/workstate
+      ORIGIN: ${WORKSTATE_ORIGIN:-http://localhost:3280}
 volumes:
   mysqldata:

@@ -1,0 +1,33 @@
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: workstate
+      MYSQL_USER: workstate
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in deploy/workstate.env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in deploy/workstate.env}
+    volumes:
+      - mysqldata:/var/lib/mysql
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -uroot -p"$$MYSQL_ROOT_PASSWORD" --silent']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  app:
+    image: ghcr.io/nvanderploeg/agent-work-track:${WORKSTATE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql://workstate:${MYSQL_PASSWORD}@db:3306/workstate
+      ORIGIN: ${ORIGIN:?set ORIGIN in deploy/workstate.env}
+      WORKSTATE_IDLE_MS: ${WORKSTATE_IDLE_MS:-}
+      WORKSTATE_HEARTBEAT_MS: ${WORKSTATE_HEARTBEAT_MS:-}
+    ports:
+      - '127.0.0.1:3280:3000'
+
+volumes:
+  mysqldata:
