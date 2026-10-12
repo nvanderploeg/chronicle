@@ -217,14 +217,20 @@ describe('concurrent startTask', () => {
 		expect(taskPosts.map((r) => r.path)).toEqual(Array(6).fill('/api/projects/proj-1/tasks'));
 
 		expect(readJsonFile('tasks.json')).toEqual(
-			Object.fromEntries(taskIds.map((id) => [id, { server: fake.url, projectId: 'proj-1' }]))
+			Object.fromEntries(
+				taskIds.map((id) => [
+					id,
+					{ server: fake.url, projectId: 'proj-1', projectUrl: `${fake.url}/p/proj-1` }
+				])
+			)
 		);
 		expect(readJsonFile('projects.json')).toEqual({
 			[fake.url]: {
 				[path.join(repo, '.git')]: {
 					projectId: 'proj-1',
 					writeKey: 'key-proj-1',
-					name: path.basename(repo)
+					name: path.basename(repo),
+					projectUrl: `${fake.url}/p/proj-1`
 				}
 			}
 		});

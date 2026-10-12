@@ -219,7 +219,8 @@ card and collapses it into a badge; a `failed`-kind state becomes a red badge.
 ### Which server
 
 At each task start the client picks a server in this order and uses the first healthy one (a
-`GET /api/health` answering within 300 ms with `service: "workstate"`):
+`GET /api/health` answering with `service: "workstate"` within 300 ms for a loopback address, 2 s
+for any other):
 
 1. `WORKSTATE_URL`, when set. This is a pin: only that server is tried, never another.
 2. `http://localhost:3280`, the local tracker.
@@ -256,16 +257,18 @@ DATABASE_URL=mysql://workstate:workstate@127.0.0.1:3316/workstate_dev \
 ORIGIN=http://localhost:3000 PORT=3000 node build
 ```
 
-| Variable                 | Meaning                                                                                                                              |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `DATABASE_URL`           | MySQL connection string. Required outside dev and test mode.                                                                         |
-| `ORIGIN`                 | Public origin the app is served at. The node adapter builds request URLs from it, so the `url` fields the API returns start with it. |
-| `PORT`                   | Port the built app listens on (default 3000).                                                                                        |
-| `WORKSTATE_IDLE_MS`      | Quiet time after the last write before a stream sends `idle` and closes. Default 14 400 000 (4 h).                                   |
-| `WORKSTATE_HEARTBEAT_MS` | Interval between `: ping` keep-alives on a stream. Default 25 000.                                                                   |
+| Variable                      | Meaning                                                                                                                                                                          |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                | MySQL connection string. Required outside dev and test mode.                                                                                                                     |
+| `ORIGIN`                      | Public origin the app is served at. The node adapter builds request URLs from it, so the `url` fields the API returns start with it.                                             |
+| `PORT`                        | Port the built app listens on (default 3000).                                                                                                                                    |
+| `WORKSTATE_IDLE_MS`           | Quiet time after the last write before a stream sends `idle` and closes. Default 14 400 000 (4 h).                                                                               |
+| `WORKSTATE_HEARTBEAT_MS`      | Interval between `: ping` keep-alives on a stream. Default 25 000.                                                                                                               |
+| `WORKSTATE_WRITES_PER_MINUTE` | Writes (`POST`/`PUT`/`PATCH` under `/api`) one client address may burst, refilled at this many a minute; the rest get 429 with `Retry-After`. Default 30; 0 turns the limit off. |
+| `ADDRESS_HEADER`              | Header the client address is read from behind a proxy (`x-real-ip` with the bundled nginx). Unset: the socket address.                                                           |
 
-The local `compose.yaml` passes only `DATABASE_URL` and `ORIGIN` to the app; set the two
-`WORKSTATE_*_MS` variables when running the built app directly or through `deploy/compose.prod.yml`.
+The local `compose.yaml` passes only `DATABASE_URL` and `ORIGIN` to the app; set the other
+`WORKSTATE_*` variables when running the built app directly or through `deploy/compose.prod.yml`.
 Compose reads `WORKSTATE_PORT` (host port, default 3280), `WORKSTATE_ORIGIN`, `MYSQL_PASSWORD`,
 `MYSQL_ROOT_PASSWORD` and `MYSQL_PORT` from the environment.
 

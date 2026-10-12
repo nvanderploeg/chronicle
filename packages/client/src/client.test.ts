@@ -65,7 +65,8 @@ interface Recorded {
 	body: unknown;
 }
 
-type Reply = { status: number; body?: unknown; text?: string } | 'hang';
+type Reply =
+	{ status: number; body?: unknown; text?: string; headers?: Record<string, string> } | 'hang';
 type Handler = (req: Recorded) => Reply;
 
 interface Fake {
@@ -97,7 +98,7 @@ async function startFake(
 			fake.requests.push(rec);
 			const reply = fake.handler(rec);
 			if (reply === 'hang') return;
-			res.writeHead(reply.status, { 'content-type': 'application/json' });
+			res.writeHead(reply.status, { 'content-type': 'application/json', ...reply.headers });
 			res.end(reply.text ?? JSON.stringify(reply.body ?? {}));
 		});
 	});
@@ -318,6 +319,33 @@ describe('discover', () => {
 		expect(await client.discover()).toBeNull();
 	});
 
+	it('gives a remote candidate the longer probe timeout and a loopback one the short timeout', async () => {
+		const slowHealth = (url: string, init?: { signal?: AbortSignal }) =>
+			new Promise<Response>((resolve, reject) => {
+				const timer = setTimeout(
+					() => resolve(Response.json({ service: 'workstate', version: '0.1.0', db: 'ok' })),
+					150
+				);
+				init?.signal?.addEventListener('abort', () => {
+					clearTimeout(timer);
+					reject(init.signal?.reason);
+				});
+			});
+		const options = {
+			env: {},
+			fetch: slowHealth as unknown as typeof fetch,
+			probeTimeoutMs: 50,
+			remoteProbeTimeoutMs: 1000
+		};
+
+		expect(await makeClient({ ...options, candidates: ['http://localhost:3280'] }).discover()).toBe(
+			null
+		);
+		expect(
+			await makeClient({ ...options, candidates: ['https://workstate.example.com'] }).discover()
+		).toBe('https://workstate.example.com');
+	});
+
 	it('returns null when every candidate is down', async () => {
 		const client = makeClient({ env: {}, candidates: [DEAD, 'http://127.0.0.1:8'] });
 
@@ -394,9 +422,18 @@ describe('startTask', () => {
 		});
 
 		expect(readFile('projects.json')).toEqual({
-			[fake.url]: { [cwd]: { projectId: 'proj-1', writeKey: 'key-1', name: path.basename(cwd) } }
+			[fake.url]: {
+				[cwd]: {
+					projectId: 'proj-1',
+					writeKey: 'key-1',
+					name: path.basename(cwd),
+					projectUrl: `${fake.url}/p/proj-1`
+				}
+			}
 		});
-		expect(readFile('tasks.json')).toEqual({ 'task-1': { server: fake.url, projectId: 'proj-1' } });
+		expect(readFile('tasks.json')).toEqual({
+			'task-1': { server: fake.url, projectId: 'proj-1', projectUrl: `${fake.url}/p/proj-1` }
+		});
 		expect(modeOf('projects.json')).toBe(0o600);
 		expect(modeOf('tasks.json')).toBe(0o600);
 		expect(fs.readdirSync(configDir).sort()).toEqual(['projects.json', 'tasks.json']);
@@ -433,10 +470,8 @@ describe('startTask', () => {
 		expect(projectPosts).toHaveLength(1);
 		expect(taskPosts).toHaveLength(2);
 		expect(taskPosts[1].headers.authorization).toBe('Bearer key-1');
-		expect(readFile('tasks.json')).toEqual({
-			'task-1': { server: fake.url, projectId: 'proj-1' },
-			'task-2': { server: fake.url, projectId: 'proj-1' }
-		});
+		const handle = { server: fake.url, projectId: 'proj-1', projectUrl: `${fake.url}/p/proj-1` };
+		expect(readFile('tasks.json')).toEqual({ 'task-1': handle, 'task-2': handle });
 	});
 
 	it.each([401, 403, 404])(
@@ -487,10 +522,17 @@ describe('startTask', () => {
 				fake.requests.filter((r) => r.method === 'POST' && r.path === '/api/projects')
 			).toHaveLength(1);
 			expect(readFile('projects.json')).toEqual({
-				[fake.url]: { [cwd]: { projectId: 'proj-2', writeKey: 'key-2', name: path.basename(cwd) } }
+				[fake.url]: {
+					[cwd]: {
+						projectId: 'proj-2',
+						writeKey: 'key-2',
+						name: path.basename(cwd),
+						projectUrl: `${fake.url}/p/proj-2`
+					}
+				}
 			});
 			expect(readFile('tasks.json')).toEqual({
-				'task-9': { server: fake.url, projectId: 'proj-2' }
+				'task-9': { server: fake.url, projectId: 'proj-2', projectUrl: `${fake.url}/p/proj-2` }
 			});
 		}
 	);
@@ -563,20 +605,62 @@ describe('startTask', () => {
 		expect(other.requests).toHaveLength(0);
 	});
 
-	it('replaces a corrupt projects.json with a fresh registry', async () => {
-		const fake = await startFake(serveTasks());
+	it.each(['projects.json', 'tasks.json'])(
+		'leaves a damaged %s untouched and starts nothing, so stored write keys survive',
+		async (name) => {
+			const fake = await startFake(serveTasks());
+			writeRaw(name, '{"almost": "json",}');
+			const client = makeClient({ candidates: [fake.url] });
+
+			const result = await client.startTask({ title: 'x', cwd: workDir() });
+
+			expect(result).toEqual({
+				ok: false,
+				warning: `workstate failed: ${path.join(configDir, name)} is not a JSON object; fix or delete it`
+			});
+			expect(fs.readFileSync(path.join(configDir, name), 'utf8')).toBe('{"almost": "json",}');
+			expect(fake.requests.filter((r) => r.method === 'POST')).toHaveLength(0);
+		}
+	);
+
+	it('links to the public origin the server answers with, not the address it was reached on', async () => {
+		const PUBLIC = 'https://workstate.example.com';
+		const fake = await startFake((req) => {
+			if (req.method === 'GET' && req.path === '/api/health') return healthy();
+			if (req.method === 'POST' && req.path === '/api/projects') {
+				return {
+					status: 201,
+					body: { id: 'proj-1', writeKey: 'key-1', url: `${PUBLIC}/p/proj-1`, config: CONFIG }
+				};
+			}
+			if (req.method === 'POST' && req.path === '/api/projects/proj-1/tasks') {
+				return { status: 201, body: taskBody('task-1', 'proj-1', PUBLIC) };
+			}
+			if (req.method === 'GET' && req.path === '/api/tasks/task-1') {
+				return { status: 200, body: { task: TASK, nodes: [] } };
+			}
+			return { status: 404, body: { error: 'not found' } };
+		});
 		const cwd = workDir();
-		writeRaw('projects.json', '{not json');
 		const client = makeClient({ candidates: [fake.url] });
 
-		const result = await client.startTask({ title: 'x', cwd });
+		const started = await client.startTask({ title: 'x', cwd });
 
-		expect(result).toMatchObject({
+		expect(started).toMatchObject({
 			ok: true,
-			value: { createdProject: true, projectId: 'proj-1' }
+			value: { url: `${PUBLIC}/p/proj-1/t/task-1`, projectUrl: `${PUBLIC}/p/proj-1` }
 		});
-		expect(readFile('projects.json')).toEqual({
-			[fake.url]: { [cwd]: { projectId: 'proj-1', writeKey: 'key-1', name: path.basename(cwd) } }
+		expect(await client.getTask({ taskId: 'task-1' })).toMatchObject({
+			ok: true,
+			value: { url: `${PUBLIC}/p/proj-1/t/task-1` }
+		});
+		expect(await client.projectUrl({ taskId: 'task-1' })).toEqual({
+			ok: true,
+			value: { url: `${PUBLIC}/p/proj-1/t/task-1` }
+		});
+		expect(await client.projectUrl({ cwd })).toEqual({
+			ok: true,
+			value: { url: `${PUBLIC}/p/proj-1` }
 		});
 	});
 
@@ -692,14 +776,48 @@ describe('updateStep', () => {
 		expect(fake.requests).toHaveLength(0);
 	});
 
-	it('reads a corrupt tasks.json as empty and returns the unknown-task warning', async () => {
+	it('names a damaged tasks.json in its warning', async () => {
 		writeRaw('tasks.json', '[[');
 		const client = makeClient({ candidates: [DEAD] });
 
 		expect(await client.updateStep({ taskId: 'task-1', path: 'a' })).toEqual({
 			ok: false,
-			warning: 'unknown task task-1 on this machine — continuing untracked'
+			warning: `workstate failed: ${path.join(configDir, 'tasks.json')} is not a JSON object; fix or delete it`
 		});
+	});
+
+	it('waits out a short Retry-After on 429 and sends the update once more', async () => {
+		let calls = 0;
+		const fake = await startFake(() => {
+			calls += 1;
+			return calls === 1
+				? { status: 429, body: { error: 'too many writes' }, headers: { 'retry-after': '0' } }
+				: { status: 200, body: { node: NODE } };
+		});
+		seedHandle(fake.url);
+		const client = makeClient({ candidates: [DEAD] });
+
+		expect(await client.updateStep({ taskId: 'task-1', path: 'a' })).toEqual({
+			ok: true,
+			value: { node: NODE }
+		});
+		expect(fake.requests.map((r) => r.method)).toEqual(['PUT', 'PUT']);
+	});
+
+	it('reports a 429 whose Retry-After is too long to wait without retrying', async () => {
+		const fake = await startFake(() => ({
+			status: 429,
+			body: { error: 'too many writes' },
+			headers: { 'retry-after': '60' }
+		}));
+		seedHandle(fake.url);
+		const client = makeClient({ candidates: [DEAD] });
+
+		expect(await client.updateStep({ taskId: 'task-1', path: 'a' })).toEqual({
+			ok: false,
+			warning: 'workstate rejected the update: too many writes'
+		});
+		expect(fake.requests).toHaveLength(1);
 	});
 
 	it('maps a 400 with validStates to a rejection naming the valid states', async () => {
@@ -1078,14 +1196,14 @@ describe('configure and projectUrl', () => {
 		});
 	});
 
-	it('reads a corrupt projects.json as empty and returns the no-project warning', async () => {
+	it('names a damaged projects.json in its warning', async () => {
 		const fake = await startFake(() => healthy());
 		writeRaw('projects.json', '{{{');
 		const client = makeClient({ candidates: [fake.url] });
 
 		expect(await client.projectUrl({ cwd: workDir() })).toEqual({
 			ok: false,
-			warning: 'no workstate project for this repo yet — start a task first'
+			warning: `workstate failed: ${path.join(configDir, 'projects.json')} is not a JSON object; fix or delete it`
 		});
 	});
 
@@ -1128,7 +1246,8 @@ describe('doctor', () => {
 			probes: [{ server: fake.url, ok: true, version: '0.1.0' }],
 			server: fake.url,
 			repoKey: cwd,
-			registered: { projectId: 'proj-1', name: path.basename(cwd) }
+			registered: { projectId: 'proj-1', name: path.basename(cwd) },
+			registryError: null
 		});
 	});
 
@@ -1148,7 +1267,8 @@ describe('doctor', () => {
 			],
 			server: up.url,
 			repoKey: cwd,
-			registered: null
+			registered: null,
+			registryError: null
 		});
 	});
 
@@ -1162,7 +1282,7 @@ describe('doctor', () => {
 		expect(report.registered).toBeNull();
 	});
 
-	it('reads a corrupt projects.json as empty and resolves', async () => {
+	it('resolves with the registry problem when projects.json is damaged', async () => {
 		const up = await startFake(() => healthy());
 		writeRaw('projects.json', 'nope');
 		const client = makeClient({ env: {}, candidates: [up.url] });
@@ -1170,6 +1290,9 @@ describe('doctor', () => {
 		const report = await client.doctor({ cwd: workDir() });
 
 		expect(report.registered).toBeNull();
+		expect(report.registryError).toBe(
+			`${path.join(configDir, 'projects.json')} is not a JSON object; fix or delete it`
+		);
 	});
 
 	it('resolves with a null server when the transport throws', async () => {

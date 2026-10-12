@@ -142,7 +142,8 @@ if [ ! -f "$MANIFEST" ]; then
 	say ok "nothing recorded at $MANIFEST"
 else
 	found=0
-	while IFS=$'\t' read -r kind path target; do
+	# Read the manifest on fd 3: commands in the loop (claude mcp) would drain stdin.
+	while IFS=$'\t' read -r -u 3 kind path target; do
 		found=1
 		case $kind in
 			link) remove_link "$path" "$target" ;;
@@ -154,7 +155,7 @@ else
 				forget server "$REPO" -
 				;;
 		esac
-	done < <(node "$HELPER" manifest-list "$REPO")
+	done 3< <(node "$HELPER" manifest-list "$REPO")
 	[ "$found" = 1 ] || say ok "nothing recorded for $REPO in $MANIFEST"
 fi
 

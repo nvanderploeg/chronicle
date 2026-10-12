@@ -2,6 +2,17 @@ import { normaliseServer, request } from './http.ts';
 
 export const DEFAULT_CANDIDATES = ['http://localhost:3280', 'https://workstate.nanzero.com'];
 
+function isLoopback(server: string): boolean {
+	try {
+		const host = new URL(server).hostname;
+		return (
+			host === 'localhost' || host.endsWith('.localhost') || host === '[::1]' || /^127\./.test(host)
+		);
+	} catch {
+		return false;
+	}
+}
+
 export interface Probe {
 	server: string;
 	ok: boolean;
@@ -13,6 +24,7 @@ export function createDiscovery(opts: {
 	env: Record<string, string | undefined>;
 	candidates: string[];
 	probeTimeoutMs: number;
+	remoteProbeTimeoutMs: number;
 }) {
 	const pinned = normaliseServer(opts.env.WORKSTATE_URL ?? '') || null;
 	const targets = pinned ? [pinned] : opts.candidates.map(normaliseServer).filter(Boolean);
@@ -20,7 +32,7 @@ export function createDiscovery(opts: {
 	async function probe(server: string): Promise<Probe> {
 		const reply = await request<{ service?: unknown; version?: unknown } | null>(
 			opts.fetch,
-			opts.probeTimeoutMs,
+			isLoopback(server) ? opts.probeTimeoutMs : opts.remoteProbeTimeoutMs,
 			`${server}/api/health`,
 			{ method: 'GET' }
 		);

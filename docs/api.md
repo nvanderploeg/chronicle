@@ -133,6 +133,7 @@ Writes (🔑) need `Authorization: Bearer <writeKey>` of the project that owns t
 
 - `POST /api/projects`: `name` defaults to `'Untitled project'`; `preset` defaults to `'build-it'`; `config`, when given, is used instead of the preset. Unknown preset or invalid config → 400. `url` = `<origin>/p/<id>`.
 - `steps` on task create: `{ key, title?, state?, note?, tags? }[]`, created as depth-1 nodes in array order. `url` = `<origin>/p/<projectId>/t/<taskId>`.
+- Every `POST`, `PUT` and `PATCH` under `/api` draws from a token bucket per client address: `WORKSTATE_WRITES_PER_MINUTE` (default 30) at once, refilled at that many a minute; `0` disables it. An empty bucket → 429 `{ error: 'too many writes from this address; retry later' }` with `Retry-After: <whole seconds>`, before the body or key is checked.
 - 401 `{ error: 'missing write key' }` with no bearer token; 403 `{ error: 'invalid write key' }` on mismatch; 404 `{ error: 'project not found' | 'task not found' }`; 400 for malformed ids, paths, or bodies.
 
 ## Stream
@@ -163,7 +164,7 @@ Writes (🔑) need `Authorization: Bearer <writeKey>` of the project that owns t
 
 Under `$XDG_CONFIG_HOME/workstate` (default `~/.config/workstate`), written atomically with mode 0600:
 
-- `projects.json` — `{ [server]: { [repoKey]: { projectId, writeKey, name } } }`. `repoKey` = absolute `git rev-parse --path-format=absolute --git-common-dir` of the cwd, or the cwd's realpath outside git. `name` = basename of the repo root (parent of a common dir named `.git`), else basename of the cwd.
-- `tasks.json` — `{ [taskId]: { server, projectId } }`.
+- `projects.json` — `{ [server]: { [repoKey]: { projectId, writeKey, name, projectUrl? } } }`. `projectUrl` is the `url` the server returned at creation. `repoKey` = absolute `git rev-parse --path-format=absolute --git-common-dir` of the cwd, or the cwd's realpath outside git. `name` = basename of the repo root (parent of a common dir named `.git`), else basename of the cwd.
+- `tasks.json` — `{ [taskId]: { server, projectId, projectUrl? } }`. `projectUrl` is the task `url` minus `/t/<taskId>`.
 
-Discovery: `WORKSTATE_URL` set → only that server, never another. Otherwise probe `http://localhost:3280` then `https://workstate.nanzero.com` with `GET /api/health` (300 ms timeout, needs 2xx and `service === 'workstate'`), at every task start. Updates go to the server in the task's handle.
+Discovery: `WORKSTATE_URL` set → only that server, never another. Otherwise probe `http://localhost:3280` then `https://workstate.nanzero.com` with `GET /api/health` (300 ms timeout for a loopback host, 2 s for any other; needs 2xx and `service === 'workstate'`), at every task start. Updates go to the server in the task's handle.

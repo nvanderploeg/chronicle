@@ -1,5 +1,6 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { DEFAULT_CANDIDATES, createDiscovery } from './discovery.ts';
 import { createStore, own, type ProjectEntry } from './files.ts';
 import { UNREACHABLE_WARNING, compact, request, type Failure, type RequestInit } from './http.ts';
@@ -26,10 +27,20 @@ const unknownTask = (taskId: string): Failure => ({
 
 const unreachable: Failure = { ok: false, warning: UNREACHABLE_WARNING };
 
+// Longer waits are reported, not slept through: tracking must never stall the agent.
+const MAX_RATE_LIMIT_WAIT_MS = 5000;
+
 interface Target {
 	server: string;
 	projectId: string;
 	key: string | undefined;
+	projectUrl: string;
+}
+
+// Build links from the server's replies, never from `server`: the address we reach it on may not be its public origin.
+function projectUrlFrom(taskUrl: string, taskId: string, fallback: string): string {
+	const suffix = `/t/${taskId}`;
+	return taskUrl.endsWith(suffix) ? taskUrl.slice(0, -suffix.length) : fallback;
 }
 
 const taskPath = (taskId: string) => `/api/tasks/${encodeURIComponent(taskId)}`;
@@ -55,23 +66,40 @@ export function createClient(options: ClientOptions = {}): WorkstateClient {
 		fetch: fetchFn,
 		env,
 		candidates: options.candidates ?? DEFAULT_CANDIDATES,
-		probeTimeoutMs: options.probeTimeoutMs ?? 300
+		probeTimeoutMs: options.probeTimeoutMs ?? 300,
+		remoteProbeTimeoutMs: options.remoteProbeTimeoutMs ?? 2000
 	});
 
-	const send = <T>(server: string, path: string, init: RequestInit) =>
-		request<T>(fetchFn, requestTimeoutMs, `${server}${path}`, init);
+	async function send<T>(server: string, path: string, init: RequestInit) {
+		const reply = await request<T>(fetchFn, requestTimeoutMs, `${server}${path}`, init);
+		if (
+			reply.ok ||
+			reply.status !== 429 ||
+			reply.retryAfterMs === undefined ||
+			reply.retryAfterMs > MAX_RATE_LIMIT_WAIT_MS
+		) {
+			return reply;
+		}
+		await sleep(reply.retryAfterMs);
+		return request<T>(fetchFn, requestTimeoutMs, `${server}${path}`, init);
+	}
 
 	async function createProject(
 		server: string,
 		repoKey: string,
 		name: string
 	): Promise<{ ok: true; entry: ProjectEntry } | Failure> {
-		const reply = await send<{ id: string; writeKey: string }>(server, '/api/projects', {
-			method: 'POST',
-			body: { name }
-		});
+		const reply = await send<{ id: string; writeKey: string; url?: string }>(
+			server,
+			'/api/projects',
+			{ method: 'POST', body: { name } }
+		);
 		if (!reply.ok) return reply;
-		return { ok: true, entry: { projectId: reply.body.id, writeKey: reply.body.writeKey, name } };
+		const { id, writeKey, url } = reply.body;
+		return {
+			ok: true,
+			entry: { projectId: id, writeKey, name, projectUrl: url || `${server}/p/${id}` }
+		};
 	}
 
 	async function targetFromTask(taskId: string): Promise<Result<Target>> {
@@ -81,7 +109,13 @@ export function createClient(options: ClientOptions = {}): WorkstateClient {
 		const entry = Object.values(forServer).find((e) => e?.projectId === handle.projectId);
 		return {
 			ok: true,
-			value: { server: handle.server, projectId: handle.projectId, key: entry?.writeKey }
+			value: {
+				server: handle.server,
+				projectId: handle.projectId,
+				key: entry?.writeKey,
+				projectUrl:
+					handle.projectUrl ?? entry?.projectUrl ?? `${handle.server}/p/${handle.projectId}`
+			}
 		};
 	}
 
@@ -91,7 +125,15 @@ export function createClient(options: ClientOptions = {}): WorkstateClient {
 		const { repoKey } = await repoIdentity(cwd ?? process.cwd());
 		const entry = own(own(await store.readProjects(), server), repoKey);
 		if (!entry) return { ok: false, warning: NO_PROJECT_WARNING };
-		return { ok: true, value: { server, projectId: entry.projectId, key: entry.writeKey } };
+		return {
+			ok: true,
+			value: {
+				server,
+				projectId: entry.projectId,
+				key: entry.writeKey,
+				projectUrl: entry.projectUrl ?? `${server}/p/${entry.projectId}`
+			}
+		};
 	}
 
 	const targetFor = (input: { taskId?: string; cwd?: string }) =>
@@ -112,6 +154,7 @@ export function createClient(options: ClientOptions = {}): WorkstateClient {
 				const server = await discovery.discover();
 				if (!server) return unreachable;
 				const { repoKey, name } = await repoIdentity(input.cwd ?? process.cwd());
+				await store.assertReadable();
 
 				const resolved = await store.resolveProject(server, repoKey, () =>
 					createProject(server, repoKey, name)
@@ -150,17 +193,17 @@ export function createClient(options: ClientOptions = {}): WorkstateClient {
 				if (!reply.ok) return reply;
 
 				const { taskId, url } = reply.body;
-				await store.saveTask(taskId, { server, projectId: entry.projectId }).catch(() => {});
+				const projectUrl = projectUrlFrom(
+					url,
+					taskId,
+					entry.projectUrl ?? `${server}/p/${entry.projectId}`
+				);
+				await store
+					.saveTask(taskId, { server, projectId: entry.projectId, projectUrl })
+					.catch(() => {});
 				return {
 					ok: true,
-					value: {
-						taskId,
-						url,
-						server,
-						projectId: entry.projectId,
-						projectUrl: `${server}/p/${entry.projectId}`,
-						createdProject
-					}
+					value: { taskId, url, server, projectId: entry.projectId, projectUrl, createdProject }
 				};
 			}),
 
@@ -210,7 +253,7 @@ export function createClient(options: ClientOptions = {}): WorkstateClient {
 			guard(async () => {
 				const target = await targetFromTask(input.taskId);
 				if (!target.ok) return target;
-				const { server, projectId } = target.value;
+				const { server, projectUrl } = target.value;
 				const reply = await send<{ task: Task; nodes: Node[] }>(server, taskPath(input.taskId), {
 					method: 'GET'
 				});
@@ -220,7 +263,7 @@ export function createClient(options: ClientOptions = {}): WorkstateClient {
 					value: {
 						task: reply.body.task,
 						nodes: reply.body.nodes,
-						url: `${server}/p/${projectId}/t/${input.taskId}`
+						url: `${projectUrl}/t/${input.taskId}`
 					}
 				};
 			}),
@@ -229,9 +272,8 @@ export function createClient(options: ClientOptions = {}): WorkstateClient {
 			guard(async () => {
 				const target = await targetFor(input);
 				if (!target.ok) return target;
-				const { server, projectId, key } = target.value;
+				const { server, projectId, key, projectUrl } = target.value;
 				const base = `/api/projects/${encodeURIComponent(projectId)}`;
-				const projectUrl = `${server}/p/${projectId}`;
 
 				const writing = input.config ?? input.patch;
 				if (writing && !key) {
@@ -268,8 +310,7 @@ export function createClient(options: ClientOptions = {}): WorkstateClient {
 			guard(async () => {
 				const target = await targetFor(input);
 				if (!target.ok) return target;
-				const { server, projectId } = target.value;
-				const url = `${server}/p/${projectId}`;
+				const url = target.value.projectUrl;
 				return { ok: true, value: { url: input.taskId ? `${url}/t/${input.taskId}` : url } };
 			}),
 
@@ -277,14 +318,22 @@ export function createClient(options: ClientOptions = {}): WorkstateClient {
 			const { repoKey } = await repoIdentity(input.cwd ?? process.cwd());
 			const probes = await discovery.probeAll();
 			const server = probes.find((p) => p.ok)?.server ?? null;
-			const entry = server ? own(own(await store.readProjects(), server), repoKey) : undefined;
+			let registryError: string | null = null;
+			let entry: ProjectEntry | undefined;
+			try {
+				await store.assertReadable();
+				entry = server ? own(own(await store.readProjects(), server), repoKey) : undefined;
+			} catch (error) {
+				registryError = error instanceof Error ? error.message : String(error);
+			}
 			return {
 				configDir,
 				pinned: discovery.pinned,
 				probes,
 				server,
 				repoKey,
-				registered: entry ? { projectId: entry.projectId, name: entry.name } : null
+				registered: entry ? { projectId: entry.projectId, name: entry.name } : null,
+				registryError
 			};
 		}
 	};

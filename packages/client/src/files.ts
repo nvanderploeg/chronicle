@@ -7,11 +7,13 @@ export interface ProjectEntry {
 	projectId: string;
 	writeKey: string;
 	name: string;
+	projectUrl?: string;
 }
 
 export interface TaskHandle {
 	server: string;
 	projectId: string;
+	projectUrl?: string;
 }
 
 export type ProjectsFile = Record<string, Record<string, ProjectEntry>>;
@@ -21,16 +23,25 @@ export function own<T>(record: Record<string, T> | undefined, key: string): T | 
 	return record && Object.hasOwn(record, key) ? record[key] : undefined;
 }
 
+// Throw rather than read a damaged registry as empty: the next write would drop every write key in it.
 async function readJson<T>(path: string): Promise<Record<string, T>> {
+	let text: string;
 	try {
-		const parsed: unknown = JSON.parse(await readFile(path, 'utf8'));
-		if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-			return parsed as Record<string, T>;
-		}
-	} catch {
-		return {};
+		text = await readFile(path, 'utf8');
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
+		throw new Error(`cannot read ${path}`, { cause: error });
 	}
-	return {};
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(text);
+	} catch {
+		parsed = undefined;
+	}
+	if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+		throw new Error(`${path} is not a JSON object; fix or delete it`);
+	}
+	return parsed as Record<string, T>;
 }
 
 async function writeJson(path: string, data: unknown): Promise<void> {
@@ -106,6 +117,10 @@ export function createStore(configDir: string) {
 
 	return {
 		readProjects: () => readJson<ProjectsFile[string]>(projectsPath),
+		assertReadable: async () => {
+			await readJson(projectsPath);
+			await readJson(tasksPath);
+		},
 		readTasks: () => readJson<TaskHandle>(tasksPath),
 		saveProject: (server: string, repoKey: string, entry: ProjectEntry) =>
 			withLock(lockPath, () => putProject(server, repoKey, entry)),

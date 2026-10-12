@@ -21,6 +21,6 @@ export default defineConfig({
 		url: `http://localhost:${port}/api/health`,
 		reuseExistingServer: false,
 		timeout: 120_000,
-		env: { WORKSTATE_IDLE_MS: '8000' }
+		env: { WORKSTATE_IDLE_MS: '8000', WORKSTATE_WRITES_PER_MINUTE: '0' }
 	}
 });

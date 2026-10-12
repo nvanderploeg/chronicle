@@ -284,6 +284,28 @@ describe('step', () => {
 		expect(result.stdout).toBe('');
 	});
 
+	it.each(['1.5', '', ' ', '1e3', '0x10', 'abc'])(
+		'exits 2 without calling the client when --position is %j, not an integer',
+		async (value) => {
+			const client = fakeClient();
+
+			const result = await invoke(['step', 'task-1', 'a', '--position', value], client);
+
+			expect(result.code).toBe(2);
+			expect(result.stderr).toMatch(/bad --position/);
+			expect(client.updateStep).not.toHaveBeenCalled();
+		}
+	);
+
+	it('accepts a negative integer --position', async () => {
+		const client = fakeClient();
+		client.updateStep.mockResolvedValue({ ok: true, value: { node: NODE } });
+
+		await invoke(['step', 'task-1', 'a', '--position=-2'], client);
+
+		expect(client.updateStep.mock.calls[0][0].position).toBe(-2);
+	});
+
 	it('exits 2 with usage on stderr when the path is missing', async () => {
 		const client = fakeClient();
 

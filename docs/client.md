@@ -13,7 +13,8 @@ export interface ClientOptions {
 	configDir?: string; // default `${XDG_CONFIG_HOME ?? ~/.config}/workstate`, read from `env`
 	fetch?: typeof fetch; // default globalThis.fetch
 	candidates?: string[]; // default DEFAULT_CANDIDATES
-	probeTimeoutMs?: number; // default 300
+	probeTimeoutMs?: number; // loopback hosts; default 300
+	remoteProbeTimeoutMs?: number; // every other host; default 2000
 	requestTimeoutMs?: number; // default 2000
 }
 
@@ -34,6 +35,7 @@ export interface DoctorReport {
 	server: string | null; // what discover() picked
 	repoKey: string;
 	registered: { projectId: string; name: string } | null; // registry entry for (server, repoKey)
+	registryError: string | null; // why projects.json or tasks.json cannot be read
 }
 
 export interface WorkstateClient {
@@ -51,7 +53,7 @@ export interface WorkstateClient {
 			url: string; // from the server response
 			server: string;
 			projectId: string;
-			projectUrl: string; // `${server}/p/${projectId}`
+			projectUrl: string; // the task `url` minus `/t/<taskId>`
 			createdProject: boolean;
 		}>
 	>;
@@ -90,12 +92,13 @@ Also export the `Tag`, `Task`, `Node`, `ProjectConfig`, `ConfigPatch`, `StateDef
 
 Behaviour:
 
-- **discover** — server URLs are normalised by trimming whitespace and trailing `/`. `WORKSTATE_URL` set and non-empty → probe it alone; healthy → it, else `null`; the candidates are never tried. Otherwise the first healthy candidate in order, else `null`. Healthy = `GET <server>/api/health` answers 2xx within `probeTimeoutMs` with JSON `service === 'workstate'`.
-- **startTask** — `discover()`; `null` → `{ ok: false, warning: UNREACHABLE_WARNING }`. Look up `projects.json[server][repoKey]`; absent → `POST /api/projects { name }` and save the entry (`createdProject: true`). Then `POST /api/projects/:id/tasks` with `Authorization: Bearer <writeKey>`, body `{ title, summary, state, note, steps }` (omit undefined fields). If that answers 401, 403 or 404, create a fresh project, overwrite the registry entry, and retry once (`createdProject: true`). Save `tasks.json[taskId] = { server, projectId }`.
-- **updateStep / updateTask / getTask** — need `tasks.json[taskId]`; absent → `{ ok: false, warning: 'unknown task <taskId> on this machine — continuing untracked' }`. The write key is the `projects.json[handle.server]` entry whose `projectId` matches. They use `handle.server` only — no discovery. Each path segment is URI-encoded; `/` separators are kept. `getTask`'s `url` = `${server}/p/${projectId}/t/${taskId}`.
-- **configure / projectUrl** — the project comes from the `taskId` handle when given, else from `projects.json[discover()][repoKey(cwd)]`. Neither → `{ ok: false, warning: 'no workstate project for this repo yet — start a task first' }`.
+- **discover** — server URLs are normalised by trimming whitespace and trailing `/`. `WORKSTATE_URL` set and non-empty → probe it alone; healthy → it, else `null`; the candidates are never tried. Otherwise the first healthy candidate in order, else `null`. Healthy = `GET <server>/api/health` answers 2xx with JSON `service === 'workstate'` within `probeTimeoutMs` when the host is loopback (`localhost`, `*.localhost`, `127.*`, `[::1]`), else within `remoteProbeTimeoutMs`.
+- **startTask** — `discover()`; `null` → `{ ok: false, warning: UNREACHABLE_WARNING }`. Look up `projects.json[server][repoKey]`; absent → `POST /api/projects { name }` and save the entry with the returned `url` as `projectUrl` (`createdProject: true`). Then `POST /api/projects/:id/tasks` with `Authorization: Bearer <writeKey>`, body `{ title, summary, state, note, steps }` (omit undefined fields). If that answers 401, 403 or 404, create a fresh project, overwrite the registry entry, and retry once (`createdProject: true`). Save `tasks.json[taskId] = { server, projectId, projectUrl }`.
+- **updateStep / updateTask / getTask** — need `tasks.json[taskId]`; absent → `{ ok: false, warning: 'unknown task <taskId> on this machine — continuing untracked' }`. The write key is the `projects.json[handle.server]` entry whose `projectId` matches. They use `handle.server` only — no discovery. Each path segment is URI-encoded; `/` separators are kept. `getTask`'s `url` = `${projectUrl}/t/${taskId}`.
+- **configure / projectUrl** — the project comes from the `taskId` handle when given, else from `projects.json[discover()][repoKey(cwd)]`. Neither → `{ ok: false, warning: 'no workstate project for this repo yet — start a task first' }`. Every returned link starts with the project's `projectUrl` from the handle or registry entry, else `${server}/p/${projectId}`.
+- **Rate limit** — a 429 whose `Retry-After` is at most 5 s is waited out and the request sent once more; a longer or missing one is reported like any other rejection.
 - **Failures** — network error, timeout (`requestTimeoutMs`) or 5xx → `UNREACHABLE_WARNING`. Other non-2xx → `workstate rejected the update: <error>`, plus ` (valid states: a, b, c)` when the body has `validStates`. Methods never throw or reject.
-- **Files** — `projects.json` and `tasks.json` in `configDir` (layout in `docs/api.md`). A missing or unparsable file reads as `{}`. Writes create `configDir` (0700) and write to a temp file then rename, mode 0600.
+- **Files** — `projects.json` and `tasks.json` in `configDir` (layout in `docs/api.md`). A missing file reads as `{}`. An unreadable file, or one that is not a JSON object, is never overwritten: the call returns `workstate failed: <path> is not a JSON object; fix or delete it` (or `cannot read <path>`) before contacting a server, and `startTask` checks both files first. Writes create `configDir` (0700) and write to a temp file then rename, mode 0600.
 - **repoIdentity** — `git -C <cwd> rev-parse --path-format=absolute --git-common-dir`; success → `repoKey` = that path, `name` = basename of its parent when the path's basename is `.git`, else basename of the path. Failure (not a repo / no git) → `repoKey` = `realpath(cwd)`, `name` = its basename.
 
 ## `workstate` CLI (`packages/cli`)
@@ -119,7 +122,7 @@ workstate doctor [--cwd dir]
     stdout: human-readable DoctorReport
 ```
 
-- `--step key=Title` without `=Title` → title omitted. `--tag "round 2|#a855f7"` → `{ text: 'round 2', color: '#a855f7' }`; no `|` → text only. `--color in_work=#14b8a6` → patch `states: [{ key: 'in_work', color: '#14b8a6' }]`.
+- `--step key=Title` without `=Title` → title omitted. `--tag "round 2|#a855f7"` → `{ text: 'round 2', color: '#a855f7' }`; no `|` → text only. `--color in_work=#14b8a6` → patch `states: [{ key: 'in_work', color: '#14b8a6' }]`. `--position` must be an integer (`--position=-1` for a negative one).
 - A `Result` with `ok: false` → stderr `workstate: <warning>` and exit 0.
 - Unknown command, missing positional, or bad flag → usage text on stderr, exit 2.
 

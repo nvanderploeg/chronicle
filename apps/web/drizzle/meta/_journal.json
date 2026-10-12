@@ -8,6 +8,13 @@
       "when": 1791826420099,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1791830128743,
+      "tag": "0001_events_task_index",
+      "breakpoints": true
     }
   ]
 }

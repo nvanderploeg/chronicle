@@ -71,6 +71,7 @@ export interface ClientOptions {
 	fetch?: typeof fetch;
 	candidates?: string[];
 	probeTimeoutMs?: number;
+	remoteProbeTimeoutMs?: number;
 	requestTimeoutMs?: number;
 }
 
@@ -91,6 +92,7 @@ export interface DoctorReport {
 	server: string | null;
 	repoKey: string;
 	registered: { projectId: string; name: string } | null;
+	registryError: string | null;
 }
 
 export interface WorkstateClient {

@@ -86,7 +86,8 @@ function formatDoctor(report: DoctorReport): string {
 		...(probes.length ? probes : ['  none']),
 		`server: ${report.server ?? 'none'}`,
 		`repo: ${report.repoKey}`,
-		`registered: ${report.registered ? `${report.registered.name} (${report.registered.projectId})` : 'no'}`
+		`registered: ${report.registered ? `${report.registered.name} (${report.registered.projectId})` : 'no'}`,
+		`registry: ${report.registryError ?? 'ok'}`
 	].join('\n');
 }
 
@@ -139,7 +140,7 @@ export async function run(argv: string[], io: RunIo): Promise<number> {
 					[2, 3]
 				);
 				const position = values.position === undefined ? undefined : Number(values.position);
-				if (position !== undefined && !Number.isFinite(position)) {
+				if (position !== undefined && !/^-?\d+$/.test(values.position!)) {
 					throw new UsageError(`bad --position: ${values.position}`);
 				}
 				const result = await client.updateStep({

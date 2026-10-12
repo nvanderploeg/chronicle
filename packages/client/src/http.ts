@@ -1,6 +1,6 @@
 export const UNREACHABLE_WARNING = 'workstate unreachable — continuing untracked';
 
-export type Failure = { ok: false; warning: string; status?: number };
+export type Failure = { ok: false; warning: string; status?: number; retryAfterMs?: number };
 export type Reply<T> = { ok: true; status: number; body: T } | Failure;
 
 export interface RequestInit {
@@ -29,6 +29,7 @@ export async function request<T>(
 
 	let status: number;
 	let text: string;
+	let retryAfter: string | null;
 	try {
 		const res = await fetchFn(url, {
 			method: init.method,
@@ -37,6 +38,7 @@ export async function request<T>(
 			signal: AbortSignal.timeout(timeoutMs)
 		});
 		status = res.status;
+		retryAfter = res.headers.get('retry-after');
 		text = await res.text();
 	} catch {
 		return { ok: false, warning: UNREACHABLE_WARNING };
@@ -61,5 +63,14 @@ export async function request<T>(
 	const valid = Array.isArray(fields.validStates)
 		? ` (valid states: ${fields.validStates.join(', ')})`
 		: '';
-	return { ok: false, warning: `workstate rejected the update: ${error}${valid}`, status };
+	const failure: Failure = {
+		ok: false,
+		warning: `workstate rejected the update: ${error}${valid}`,
+		status
+	};
+	const seconds = Number(retryAfter);
+	if (retryAfter !== null && retryAfter.trim() !== '' && Number.isFinite(seconds) && seconds >= 0) {
+		failure.retryAfterMs = seconds * 1000;
+	}
+	return failure;
 }

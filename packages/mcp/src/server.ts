@@ -73,7 +73,7 @@ export function createServer(client: WorkstateClient = createClient()): McpServe
 				state: z.string().optional(),
 				note: z.string().optional(),
 				tags: z.array(tag).optional(),
-				position: z.number().optional()
+				position: z.number().int().optional()
 			}
 		},
 		async (args) => respond(await client.updateStep(args))

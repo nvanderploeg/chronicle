@@ -410,9 +410,10 @@ describe('workstate MCP server', () => {
 			['update_step', { taskId: 'task1' }, 'updateStep'],
 			['update_task', { title: 'no id' }, 'updateTask'],
 			['get_task', {}, 'getTask'],
-			['start_task', {}, 'startTask']
+			['start_task', {}, 'startTask'],
+			['update_step', { taskId: 'task1', path: 'a', position: 1.5 }, 'updateStep']
 		] as const)(
-			'%s with a missing required argument fails without calling the client',
+			'%s with a missing or malformed argument fails without calling the client',
 			async (name, args, method) => {
 				const client = fakeClient();
 				const { mcp } = await connect(client);

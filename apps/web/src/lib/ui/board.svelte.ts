@@ -156,12 +156,18 @@ export class Board {
 		}
 		let taskId: string | null = null;
 		let path: string | null = null;
-		if (type === 'task') taskId = (payload as Task).id;
+		// Stamp with the row's write time, never receipt time: replayed frames would all read as just now.
+		let at = new SvelteDate().toISOString();
+		if (type === 'task') {
+			taskId = (payload as Task).id;
+			at = (payload as Task).updatedAt;
+		}
 		if (type === 'node') {
 			taskId = (payload as Node).taskId;
 			path = (payload as Node).path;
+			at = (payload as Node).updatedAt;
 		}
-		this.receive({ seq, type, taskId, path, payload, at: new SvelteDate().toISOString() });
+		this.receive({ seq, type, taskId, path, payload, at });
 	}
 
 	receive(event: WorkstateEvent): void {

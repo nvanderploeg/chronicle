@@ -82,5 +82,8 @@ export const events = mysqlTable(
 		payload: json('payload').notNull(),
 		at: now('at')
 	},
-	(table) => [index('events_project_seq_idx').on(table.projectId, table.seq)]
+	(table) => [
+		index('events_project_seq_idx').on(table.projectId, table.seq),
+		index('events_task_path_seq_idx').on(table.taskId, table.path, table.seq)
+	]
 );
