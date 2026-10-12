@@ -1,0 +1,5 @@
+interface:
+  display_name: "Build It"
+  short_description: "Orchestrate worker/reviewer rounds to build a plan or ticket"
+policy:
+  allow_implicit_invocation: false

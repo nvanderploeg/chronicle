@@ -1,0 +1,26 @@
+{
+	"name": "@workstate/mcp",
+	"version": "0.1.0",
+	"type": "module",
+	"bin": {
+		"workstate-mcp": "dist/index.js"
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"check": "tsc --noEmit",
+		"test": "vitest run --passWithNoTests"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.32.1",
+		"@workstate/client": "workspace:*",
+		"zod": "^4.6.7"
+	},
+	"devDependencies": {
+		"@types/node": "^22",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.8"
+	}
+}

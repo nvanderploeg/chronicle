@@ -1,0 +1,4 @@
+CREATE DATABASE IF NOT EXISTS workstate_dev;
+CREATE DATABASE IF NOT EXISTS workstate_test;
+GRANT ALL PRIVILEGES ON `workstate%`.* TO 'workstate'@'%';
+FLUSH PRIVILEGES;

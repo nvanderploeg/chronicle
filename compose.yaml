@@ -1,0 +1,42 @@
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    ports:
+      - '${MYSQL_PORT:-3316}:3306'
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: workstate
+      MYSQL_USER: workstate
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-workstate}
+    volumes:
+      - mysqldata:/var/lib/mysql
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'mysqladmin',
+          'ping',
+          '-h',
+          'localhost',
+          '-uroot',
+          '-p${MYSQL_ROOT_PASSWORD:-rootpassword}'
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  app:
+    image: ghcr.io/nvanderploeg/agent-work-track:latest
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - '${WORKSTATE_PORT:-3280}:3000'
+    environment:
+      DATABASE_URL: mysql://workstate:${MYSQL_PASSWORD:-workstate}@db:3306/workstate
+      ORIGIN: ${WORKSTATE_ORIGIN:-http://localhost:3280}
+volumes:
+  mysqldata:

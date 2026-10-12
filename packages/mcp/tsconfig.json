@@ -1,0 +1,12 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"outDir": "dist",
+		"rootDir": "src",
+		"declaration": true,
+		"rewriteRelativeImportExtensions": true,
+		"types": ["node"]
+	},
+	"include": ["src"],
+	"exclude": ["src/**/*.test.ts"]
+}

@@ -147,3 +147,17 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Build output
+build/
+
+# Agent worktrees
+.claude/
+
+# Deployment secrets
+deploy/workstate.env
+.playwright-mcp/
+
+# Playwright
+test-results/
+playwright-report/
