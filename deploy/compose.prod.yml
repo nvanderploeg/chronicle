@@ -2,6 +2,8 @@ services:
   db:
     image: mysql:8.4
     restart: unless-stopped
+    # Sized for a small shared host; raise the buffer pool if the database outgrows it.
+    command: ['--performance-schema=OFF', '--innodb-buffer-pool-size=64M']
     environment:
       MYSQL_DATABASE: workstate
       MYSQL_USER: workstate
