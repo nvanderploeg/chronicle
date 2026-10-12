@@ -55,7 +55,14 @@ const CUSTOM_CONFIG = {
 	initialState: 'todo',
 	states: [
 		{ key: 'todo', label: 'To do', color: '#111111', kind: 'pending', animation: 'none' },
-		{ key: 'doing', label: 'Doing', color: 'rgb(10, 20, 30)', kind: 'active', icon: 'D', animation: 'pulse' },
+		{
+			key: 'doing',
+			label: 'Doing',
+			color: 'rgb(10, 20, 30)',
+			kind: 'active',
+			icon: 'D',
+			animation: 'pulse'
+		},
 		{ key: 'shipped', label: 'Shipped', color: '#00ff00', kind: 'done', animation: 'none' }
 	]
 };
@@ -91,16 +98,26 @@ const api = {
 		postProject(event({ method: 'POST', path: '/api/projects', body, origin })),
 	rawCreateProject: (rawBody: string) =>
 		postProject(event({ method: 'POST', path: '/api/projects', rawBody })),
-	getProject: (id: string) => getProjectHandler(event({ path: `/api/projects/${id}`, params: { id } })),
+	getProject: (id: string) =>
+		getProjectHandler(event({ path: `/api/projects/${id}`, params: { id } })),
 	putConfig: (id: string, body: unknown, key?: string) =>
-		putConfigHandler(event({ method: 'PUT', path: `/api/projects/${id}/config`, body, key, params: { id } })),
+		putConfigHandler(
+			event({ method: 'PUT', path: `/api/projects/${id}/config`, body, key, params: { id } })
+		),
 	patchConfig: (id: string, body: unknown, key?: string) =>
-		patchConfigHandler(event({ method: 'PATCH', path: `/api/projects/${id}/config`, body, key, params: { id } })),
+		patchConfigHandler(
+			event({ method: 'PATCH', path: `/api/projects/${id}/config`, body, key, params: { id } })
+		),
 	createTask: (id: string, body: unknown, key?: string) =>
-		postTask(event({ method: 'POST', path: `/api/projects/${id}/tasks`, body, key, params: { id } })),
-	getTask: (taskId: string) => getTaskHandler(event({ path: `/api/tasks/${taskId}`, params: { taskId } })),
+		postTask(
+			event({ method: 'POST', path: `/api/projects/${id}/tasks`, body, key, params: { id } })
+		),
+	getTask: (taskId: string) =>
+		getTaskHandler(event({ path: `/api/tasks/${taskId}`, params: { taskId } })),
 	patchTask: (taskId: string, body: unknown, key?: string) =>
-		patchTaskHandler(event({ method: 'PATCH', path: `/api/tasks/${taskId}`, body, key, params: { taskId } })),
+		patchTaskHandler(
+			event({ method: 'PATCH', path: `/api/tasks/${taskId}`, body, key, params: { taskId } })
+		),
 	getEvents: (taskId: string, path?: string) =>
 		getEventsHandler(
 			event({
@@ -110,7 +127,13 @@ const api = {
 		),
 	putNode: (taskId: string, path: string, body: unknown, key?: string) =>
 		putNodeHandler(
-			event({ method: 'PUT', path: `/api/tasks/${taskId}/nodes/${path}`, body, key, params: { taskId, path } })
+			event({
+				method: 'PUT',
+				path: `/api/tasks/${taskId}/nodes/${path}`,
+				body,
+				key,
+				params: { taskId, path }
+			})
 		)
 };
 
@@ -239,7 +262,10 @@ describe('POST /api/projects', () => {
 	});
 
 	it('rejects a custom config with a color containing a semicolon with 400', async () => {
-		const states = [{ ...CUSTOM_CONFIG.states[0], color: 'red;' }, ...CUSTOM_CONFIG.states.slice(1)];
+		const states = [
+			{ ...CUSTOM_CONFIG.states[0], color: 'red;' },
+			...CUSTOM_CONFIG.states.slice(1)
+		];
 		const res = await api.createProject({ config: { ...CUSTOM_CONFIG, states } });
 		expect(res.status).toBe(400);
 		expect(typeof (await res.json()).error).toBe('string');
@@ -329,11 +355,14 @@ describe('write auth', () => {
 		expect(await res.json()).toEqual({ error: 'missing write key' });
 	});
 
-	it.each(ROUTES)('%s with another project write key returns 403 invalid write key', async (name) => {
-		const res = await write(name, b.writeKey);
-		expect(res.status).toBe(403);
-		expect(await res.json()).toEqual({ error: 'invalid write key' });
-	});
+	it.each(ROUTES)(
+		'%s with another project write key returns 403 invalid write key',
+		async (name) => {
+			const res = await write(name, b.writeKey);
+			expect(res.status).toBe(403);
+			expect(await res.json()).toEqual({ error: 'invalid write key' });
+		}
+	);
 
 	it.each(ROUTES)('%s with a made-up bearer token returns 403 invalid write key', async (name) => {
 		const res = await write(name, 'not-a-real-key');
@@ -441,14 +470,15 @@ describe('POST /api/projects/:id/tasks', () => {
 		expect(snap.nodes).toEqual([]);
 	});
 
-	it.each([
-		['a step key outside the segment set', 'bad key!']
-	])('rejects a step with %s and creates no task', async (_name, key) => {
-		const p = await newProject();
-		const res = await api.createTask(p.id, { title: 'Bad key', steps: [{ key }] }, p.writeKey);
-		expect(res.status).toBe(400);
-		expect((await snapshot(p.id)).tasks).toEqual([]);
-	});
+	it.each([['a step key outside the segment set', 'bad key!']])(
+		'rejects a step with %s and creates no task',
+		async (_name, key) => {
+			const p = await newProject();
+			const res = await api.createTask(p.id, { title: 'Bad key', steps: [{ key }] }, p.writeKey);
+			expect(res.status).toBe(400);
+			expect((await snapshot(p.id)).tasks).toEqual([]);
+		}
+	);
 
 	it('rejects a body without a title with 400', async () => {
 		const p = await newProject();
@@ -739,7 +769,14 @@ describe('PUT /api/tasks/:taskId/nodes/<path>', () => {
 		expect(nodes).toHaveLength(3);
 		const a = nodes.find((n) => n.path === 'a');
 		const ab = nodes.find((n) => n.path === 'a/b');
-		expect(a).toMatchObject({ key: 'a', depth: 1, parentPath: null, title: 'a', state: 'queued', note: '' });
+		expect(a).toMatchObject({
+			key: 'a',
+			depth: 1,
+			parentPath: null,
+			title: 'a',
+			state: 'queued',
+			note: ''
+		});
 		expect(ab).toMatchObject({ key: 'b', depth: 2, parentPath: 'a', title: 'b', state: 'queued' });
 	});
 
@@ -763,12 +800,15 @@ describe('PUT /api/tasks/:taskId/nodes/<path>', () => {
 		expect(seqs).toEqual([...seqs].sort((x, y) => x - y));
 	});
 
-	it.each(BAD_PATHS)('rejects a path with %s with 400 and creates no nodes', async (_name, path) => {
-		const res = await api.putNode(t.taskId, path, {}, p.writeKey);
-		expect(res.status).toBe(400);
-		expect(typeof (await res.json()).error).toBe('string');
-		expect((await taskDetail(t.taskId)).nodes).toEqual([]);
-	});
+	it.each(BAD_PATHS)(
+		'rejects a path with %s with 400 and creates no nodes',
+		async (_name, path) => {
+			const res = await api.putNode(t.taskId, path, {}, p.writeKey);
+			expect(res.status).toBe(400);
+			expect(typeof (await res.json()).error).toBe('string');
+			expect((await taskDetail(t.taskId)).nodes).toEqual([]);
+		}
+	);
 
 	it('rejects an unknown node state with 400 and validStates, creating no node', async () => {
 		const res = await api.putNode(t.taskId, 'n1', { state: 'nope' }, p.writeKey);
@@ -990,7 +1030,11 @@ describe('PUT and PATCH /api/projects/:id/config', () => {
 
 	it('PATCH merges fields into an existing state by key and keeps its position', async () => {
 		const p = await newProject({ config: CUSTOM_CONFIG });
-		const res = await api.patchConfig(p.id, { states: [{ key: 'doing', label: 'Working' }] }, p.writeKey);
+		const res = await api.patchConfig(
+			p.id,
+			{ states: [{ key: 'doing', label: 'Working' }] },
+			p.writeKey
+		);
 		expect(res.status).toBe(200);
 		const { config } = await res.json();
 		expect(config.states.map((s: Body) => s.key)).toEqual(['todo', 'doing', 'shipped']);
@@ -1020,7 +1064,11 @@ describe('PUT and PATCH /api/projects/:id/config', () => {
 		const p = await newProject({ config: CUSTOM_CONFIG });
 		const res = await api.patchConfig(
 			p.id,
-			{ states: [{ key: 'review', label: 'Review', color: '#0ea5e9', kind: 'active', animation: 'none' }] },
+			{
+				states: [
+					{ key: 'review', label: 'Review', color: '#0ea5e9', kind: 'active', animation: 'none' }
+				]
+			},
 			p.writeKey
 		);
 		expect(res.status).toBe(200);
@@ -1030,7 +1078,11 @@ describe('PUT and PATCH /api/projects/:id/config', () => {
 
 	it('PATCH rejects a partial new state with 400 and keeps the config', async () => {
 		const p = await newProject({ config: CUSTOM_CONFIG });
-		const res = await api.patchConfig(p.id, { states: [{ key: 'review', label: 'Review' }] }, p.writeKey);
+		const res = await api.patchConfig(
+			p.id,
+			{ states: [{ key: 'review', label: 'Review' }] },
+			p.writeKey
+		);
 		expect(res.status).toBe(400);
 		expect((await snapshot(p.id)).project.config).toEqual(CUSTOM_CONFIG);
 	});
@@ -1090,18 +1142,22 @@ describe('PUT and PATCH /api/projects/:id/config', () => {
 			['PUT node', (p, taskId) => api.putNode(taskId, 'chunk-2', {}, p.writeKey)]
 		];
 
-		it.each(writes)('%s moves lastWriteAt forward', async (_name, run) => {
-			const p = await newProject();
-			const t = await newTask(p, { title: 'Clock' });
-			const before = (await snapshot(p.id)).project.lastWriteAt;
-			await tick();
+		it.each(writes)(
+			'%s moves lastWriteAt forward',
+			async (_name, run) => {
+				const p = await newProject();
+				const t = await newTask(p, { title: 'Clock' });
+				const before = (await snapshot(p.id)).project.lastWriteAt;
+				await tick();
 
-			const res = await run(p, t.taskId);
-			expect(res.status).toBeGreaterThanOrEqual(200);
-			expect(res.status).toBeLessThan(300);
+				const res = await run(p, t.taskId);
+				expect(res.status).toBeGreaterThanOrEqual(200);
+				expect(res.status).toBeLessThan(300);
 
-			const after = (await snapshot(p.id)).project.lastWriteAt;
-			expect(Date.parse(after)).toBeGreaterThan(Date.parse(before));
-		}, 15000);
+				const after = (await snapshot(p.id)).project.lastWriteAt;
+				expect(Date.parse(after)).toBeGreaterThan(Date.parse(before));
+			},
+			15000
+		);
 	});
 });

@@ -13,8 +13,8 @@ const CONFIG = {
 	initialState: 'queued',
 	states: [
 		{ key: 'queued', label: 'Not started', color: '#9ca3af', kind: 'pending' as const },
-		{ key: 'done', label: 'Completed', color: '#22c55e', kind: 'done' as const },
-	],
+		{ key: 'done', label: 'Completed', color: '#22c55e', kind: 'done' as const }
+	]
 };
 
 const TASK = {
@@ -27,7 +27,7 @@ const TASK = {
 	createdAt: T,
 	updatedAt: T,
 	stateSince: T,
-	finishedAt: T,
+	finishedAt: T
 };
 
 const NODE = {
@@ -43,7 +43,7 @@ const NODE = {
 	position: 0,
 	createdAt: T,
 	updatedAt: T,
-	stateSince: T,
+	stateSince: T
 };
 
 function fakeClient() {
@@ -55,7 +55,7 @@ function fakeClient() {
 		getTask: vi.fn(),
 		configure: vi.fn(),
 		projectUrl: vi.fn(),
-		doctor: vi.fn(),
+		doctor: vi.fn()
 	};
 }
 
@@ -67,7 +67,7 @@ async function invoke(argv: string[], client: FakeClient) {
 	const code = await run(argv, {
 		stdout: (s) => out.push(s),
 		stderr: (s) => err.push(s),
-		client: client as unknown as WorkstateClient,
+		client: client as unknown as WorkstateClient
 	});
 	return { code, stdout: out.join(''), stderr: err.join('') };
 }
@@ -97,8 +97,8 @@ describe('start', () => {
 				server: 'http://h',
 				projectId: 'proj-1',
 				projectUrl: 'http://h/p/proj-1',
-				createdProject: true,
-			},
+				createdProject: true
+			}
 		});
 
 		const result = await invoke(['start', 'Ship chunk 2'], client);
@@ -113,8 +113,19 @@ describe('start', () => {
 		client.startTask.mockResolvedValue({ ok: true, value: { taskId: 't', url: 'u' } });
 
 		await invoke(
-			['start', 'Ship chunk 2', '--summary', 'the summary', '--state', 'in_work', '--note', 'started', '--cwd', '/work/repo'],
-			client,
+			[
+				'start',
+				'Ship chunk 2',
+				'--summary',
+				'the summary',
+				'--state',
+				'in_work',
+				'--note',
+				'started',
+				'--cwd',
+				'/work/repo'
+			],
+			client
 		);
 
 		expect(client.startTask).toHaveBeenCalledTimes(1);
@@ -124,7 +135,7 @@ describe('start', () => {
 			summary: 'the summary',
 			state: 'in_work',
 			note: 'started',
-			cwd: '/work/repo',
+			cwd: '/work/repo'
 		});
 		expect(input.steps ?? []).toEqual([]);
 	});
@@ -188,8 +199,19 @@ describe('step', () => {
 		client.updateStep.mockResolvedValue({ ok: true, value: { node: NODE } });
 
 		const result = await invoke(
-			['step', 'task-1', 'chunk-2/tests', 'done', '--title', 'Write tests', '--note', 'n', '--position', '3'],
-			client,
+			[
+				'step',
+				'task-1',
+				'chunk-2/tests',
+				'done',
+				'--title',
+				'Write tests',
+				'--note',
+				'n',
+				'--position',
+				'3'
+			],
+			client
 		);
 
 		expect(result.code).toBe(0);
@@ -200,7 +222,7 @@ describe('step', () => {
 			state: 'done',
 			title: 'Write tests',
 			note: 'n',
-			position: 3,
+			position: 3
 		});
 	});
 
@@ -250,14 +272,14 @@ describe('step', () => {
 		const client = fakeClient();
 		client.updateStep.mockResolvedValue({
 			ok: false,
-			warning: 'workstate rejected the update: unknown state (valid states: queued, done)',
+			warning: 'workstate rejected the update: unknown state (valid states: queued, done)'
 		});
 
 		const result = await invoke(['step', 'task-1', 'a', 'nope'], client);
 
 		expect(result.code).toBe(0);
 		expect(result.stderr.trim()).toBe(
-			'workstate: workstate rejected the update: unknown state (valid states: queued, done)',
+			'workstate: workstate rejected the update: unknown state (valid states: queued, done)'
 		);
 		expect(result.stdout).toBe('');
 	});
@@ -280,7 +302,7 @@ describe('task', () => {
 
 		const result = await invoke(
 			['task', 'task-1', 'done', '--title', 'T', '--summary', 'S', '--note', 'N'],
-			client,
+			client
 		);
 
 		expect(result.code).toBe(0);
@@ -290,7 +312,7 @@ describe('task', () => {
 			state: 'done',
 			title: 'T',
 			summary: 'S',
-			note: 'N',
+			note: 'N'
 		});
 	});
 
@@ -365,7 +387,10 @@ describe('get', () => {
 describe('config', () => {
 	it('reads the current config with no flags and prints it as JSON', async () => {
 		const client = fakeClient();
-		client.configure.mockResolvedValue({ ok: true, value: { config: CONFIG, projectUrl: 'http://h/p/proj-1' } });
+		client.configure.mockResolvedValue({
+			ok: true,
+			value: { config: CONFIG, projectUrl: 'http://h/p/proj-1' }
+		});
 
 		const result = await invoke(['config'], client);
 
@@ -428,8 +453,8 @@ describe('config', () => {
 		expect(input.patch).toEqual({
 			states: [
 				{ key: 'in_work', color: '#14b8a6' },
-				{ key: 'done', color: '#22c55e' },
-			],
+				{ key: 'done', color: '#22c55e' }
+			]
 		});
 		expect(input.config).toBeUndefined();
 	});
@@ -438,13 +463,16 @@ describe('config', () => {
 		const client = fakeClient();
 		client.configure.mockResolvedValue({ ok: true, value: { config: CONFIG, projectUrl: 'u' } });
 
-		await invoke(['config', '--theme', 'light', '--color', 'in_work=#14b8a6', '--initial', 'in_work'], client);
+		await invoke(
+			['config', '--theme', 'light', '--color', 'in_work=#14b8a6', '--initial', 'in_work'],
+			client
+		);
 
 		const [input] = client.configure.mock.calls[0];
 		expect(input.patch).toEqual({
 			theme: 'light',
 			initialState: 'in_work',
-			states: [{ key: 'in_work', color: '#14b8a6' }],
+			states: [{ key: 'in_work', color: '#14b8a6' }]
 		});
 	});
 
@@ -452,13 +480,15 @@ describe('config', () => {
 		const client = fakeClient();
 		client.configure.mockResolvedValue({
 			ok: false,
-			warning: 'no workstate project for this repo yet — start a task first',
+			warning: 'no workstate project for this repo yet — start a task first'
 		});
 
 		const result = await invoke(['config', '--theme', 'dark'], client);
 
 		expect(result.code).toBe(0);
-		expect(result.stderr.trim()).toBe('workstate: no workstate project for this repo yet — start a task first');
+		expect(result.stderr.trim()).toBe(
+			'workstate: no workstate project for this repo yet — start a task first'
+		);
 		expect(result.stdout).toBe('');
 	});
 });
@@ -516,11 +546,11 @@ describe('doctor', () => {
 			pinned: null,
 			probes: [
 				{ server: 'http://localhost:3280', ok: false },
-				{ server: 'https://workstate.nanzero.com', ok: true, version: '9.9.9' },
+				{ server: 'https://workstate.nanzero.com', ok: true, version: '9.9.9' }
 			],
 			server: 'https://workstate.nanzero.com',
 			repoKey: '/work/agent-repo/.git',
-			registered: { projectId: 'proj-77', name: 'agent-repo' },
+			registered: { projectId: 'proj-77', name: 'agent-repo' }
 		});
 
 		const result = await invoke(['doctor', '--cwd', '/work/agent-repo'], client);
@@ -543,7 +573,7 @@ describe('doctor', () => {
 			probes: [{ server: 'http://pinned:1', ok: false }],
 			server: null,
 			repoKey: '/r',
-			registered: null,
+			registered: null
 		});
 
 		const result = await invoke(['doctor'], client);
@@ -563,7 +593,7 @@ describe('usage errors', () => {
 		'getTask',
 		'configure',
 		'projectUrl',
-		'doctor',
+		'doctor'
 	] as const;
 
 	function expectNoCalls(client: FakeClient) {
@@ -606,7 +636,7 @@ describe('usage errors', () => {
 			expect(result.stderr).toMatch(/usage/i);
 			expect(result.stdout).toBe('');
 			expectNoCalls(client);
-		},
+		}
 	);
 
 	it('exits 2 with usage for an unknown flag on get', async () => {
@@ -627,15 +657,18 @@ describe('warnings from every Result command', () => {
 		['task', ['task', 'task-1', 'done'], 'updateTask'],
 		['get', ['get', 'task-1'], 'getTask'],
 		['config', ['config', '--theme', 'dark'], 'configure'],
-		['url', ['url', 'task-1'], 'projectUrl'],
-	] as const)('%s prints "workstate: <warning>" on stderr and exits 0', async (_name, argv, method) => {
-		const client = fakeClient();
-		client[method].mockResolvedValue({ ok: false, warning: UNREACHABLE });
+		['url', ['url', 'task-1'], 'projectUrl']
+	] as const)(
+		'%s prints "workstate: <warning>" on stderr and exits 0',
+		async (_name, argv, method) => {
+			const client = fakeClient();
+			client[method].mockResolvedValue({ ok: false, warning: UNREACHABLE });
 
-		const result = await invoke([...argv], client);
+			const result = await invoke([...argv], client);
 
-		expect(result.code).toBe(0);
-		expect(result.stderr.trim()).toBe(`workstate: ${UNREACHABLE}`);
-		expect(result.stdout).toBe('');
-	});
+			expect(result.code).toBe(0);
+			expect(result.stderr.trim()).toBe(`workstate: ${UNREACHABLE}`);
+			expect(result.stdout).toBe('');
+		}
+	);
 });
