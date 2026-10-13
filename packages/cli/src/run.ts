@@ -2,7 +2,9 @@ import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import {
 	createClient,
+	type AgentInfo,
 	type ConfigPatch,
+	type Link,
 	type DoctorReport,
 	type ProjectConfig,
 	type Result,
@@ -19,13 +21,27 @@ export interface RunIo {
 }
 
 const USAGE = `usage:
-  workstate start <title> [--summary s] [--state k] [--note n] [--step key=Title]... [--cwd dir]
+  workstate start <title> [--summary s] [--state k] [--note n] [--step key[/sub]=Title]... [--project name]
+                  [--repo owner/name] [--branch b] [agent] [--link url[|label]]... [--pr url]... [--cwd dir]
   workstate step <taskId> <path> [state] [--title t] [--note n] [--tag text[|color]]... [--position n]
-  workstate task <taskId> [state] [--title t] [--summary s] [--note n]
+                  [agent] [--link url[|label]]...
+  workstate task <taskId> [state] [--title t] [--summary s] [--note n] [agent] [--link url[|label]]... [--pr url]...
+  workstate sync [--task id]...
+  workstate project [--name n] [--notes s] [--link url[|label]]... [--task id] [--cwd dir]
   workstate get <taskId>
   workstate config [--file path.json] [--theme t] [--color state=color]... [--initial state] [--task id] [--cwd dir]
   workstate url [taskId] [--cwd dir]
-  workstate doctor [--cwd dir]`;
+  workstate doctor [--cwd dir]
+
+  agent: [--tool claude-code|codex] [--model id] [--effort level] [--tokens n]`;
+
+const AGENT_OPTIONS = {
+	tool: { type: 'string' },
+	model: { type: 'string' },
+	effort: { type: 'string' },
+	tokens: { type: 'string' },
+	link: { type: 'string', multiple: true }
+} as const;
 
 class UsageError extends Error {}
 
@@ -63,9 +79,49 @@ function parseTag(value: string): Tag {
 	return { text: value.slice(0, bar), color: value.slice(bar + 1) };
 }
 
-function parseStep(value: string): StepInput {
-	const [key, title] = splitPair(value, '--step');
-	return title === undefined || title === '' ? { key } : { key, title };
+function parseLink(value: string): Link {
+	const bar = value.indexOf('|');
+	if (bar < 0) return { url: value };
+	return { url: value.slice(0, bar), label: value.slice(bar + 1) };
+}
+
+function parseAgent(values: {
+	tool?: string;
+	model?: string;
+	effort?: string;
+	tokens?: string;
+}): AgentInfo | undefined {
+	const agent: AgentInfo = {};
+	if (values.tool !== undefined) agent.tool = values.tool;
+	if (values.model !== undefined) agent.model = values.model;
+	if (values.effort !== undefined) agent.effort = values.effort;
+	if (values.tokens !== undefined) {
+		if (!/^\d+$/.test(values.tokens)) throw new UsageError(`bad --tokens: ${values.tokens}`);
+		agent.tokens = Number(values.tokens);
+	}
+	return Object.keys(agent).length ? agent : undefined;
+}
+
+// `--step a=A --step a/b=B` nests b under a; a missing parent is created with its key as title.
+function parseSteps(values: string[] | undefined): StepInput[] | undefined {
+	if (!values) return undefined;
+	const roots: StepInput[] = [];
+	for (const value of values) {
+		const [path, title] = splitPair(value, '--step');
+		let siblings = roots;
+		const keys = path.split('/');
+		keys.forEach((key, depth) => {
+			if (key === '') throw new UsageError(`bad --step: ${value}`);
+			let node = siblings.find((s) => s.key === key);
+			if (!node) siblings.push((node = { key }));
+			if (depth === keys.length - 1) {
+				if (title) node.title = title;
+			} else {
+				siblings = node.subtasks ??= [];
+			}
+		});
+	}
+	return roots;
 }
 
 function parseColor(value: string): NonNullable<ConfigPatch['states']>[number] {
@@ -114,7 +170,12 @@ export async function run(argv: string[], io: RunIo): Promise<number> {
 						state: { type: 'string' },
 						note: { type: 'string' },
 						step: { type: 'string', multiple: true },
-						cwd: { type: 'string' }
+						project: { type: 'string' },
+						pr: { type: 'string', multiple: true },
+						repo: { type: 'string' },
+						branch: { type: 'string' },
+						cwd: { type: 'string' },
+						...AGENT_OPTIONS
 					},
 					[1, 1]
 				);
@@ -123,7 +184,13 @@ export async function run(argv: string[], io: RunIo): Promise<number> {
 					summary: values.summary,
 					state: values.state,
 					note: values.note,
-					steps: values.step?.map(parseStep),
+					steps: parseSteps(values.step),
+					project: values.project,
+					repo: values.repo,
+					branch: values.branch,
+					agent: parseAgent(values),
+					links: values.link?.map(parseLink),
+					prs: values.pr?.map((url) => ({ url })),
 					cwd: values.cwd
 				});
 				return finish(result, (v) => `${v.taskId} ${v.url}`);
@@ -135,7 +202,8 @@ export async function run(argv: string[], io: RunIo): Promise<number> {
 						title: { type: 'string' },
 						note: { type: 'string' },
 						tag: { type: 'string', multiple: true },
-						position: { type: 'string' }
+						position: { type: 'string' },
+						...AGENT_OPTIONS
 					},
 					[2, 3]
 				);
@@ -150,6 +218,8 @@ export async function run(argv: string[], io: RunIo): Promise<number> {
 					title: values.title,
 					note: values.note,
 					tags: values.tag?.map(parseTag),
+					agent: parseAgent(values),
+					links: values.link?.map(parseLink),
 					position
 				});
 				return finish(result, (v) => `${v.node.path} ${v.node.state}`);
@@ -160,7 +230,9 @@ export async function run(argv: string[], io: RunIo): Promise<number> {
 					{
 						title: { type: 'string' },
 						summary: { type: 'string' },
-						note: { type: 'string' }
+						note: { type: 'string' },
+						pr: { type: 'string', multiple: true },
+						...AGENT_OPTIONS
 					},
 					[1, 2]
 				);
@@ -169,9 +241,41 @@ export async function run(argv: string[], io: RunIo): Promise<number> {
 					state: positionals[1],
 					title: values.title,
 					summary: values.summary,
-					note: values.note
+					note: values.note,
+					agent: parseAgent(values),
+					links: values.link?.map(parseLink),
+					prs: values.pr?.map((url) => ({ url }))
 				});
 				return finish(result, (v) => `${v.task.id} ${v.task.state}`);
+			}
+			case 'sync': {
+				const { values } = parse(rest, { task: { type: 'string', multiple: true } }, [0, 0]);
+				const result = await client.syncPrs({ taskIds: values.task });
+				return finish(
+					result,
+					(v) => `checked ${v.checked}, updated ${v.updated.length ? v.updated.join(' ') : 'none'}`
+				);
+			}
+			case 'project': {
+				const { values } = parse(
+					rest,
+					{
+						name: { type: 'string' },
+						notes: { type: 'string' },
+						link: { type: 'string', multiple: true },
+						task: { type: 'string' },
+						cwd: { type: 'string' }
+					},
+					[0, 0]
+				);
+				const result = await client.updateProject({
+					taskId: values.task,
+					cwd: values.cwd,
+					name: values.name,
+					notes: values.notes,
+					links: values.link?.map(parseLink)
+				});
+				return finish(result, (v) => `${v.project.name} ${v.projectUrl}`);
 			}
 			case 'get': {
 				const { positionals } = parse(rest, {}, [1, 1]);

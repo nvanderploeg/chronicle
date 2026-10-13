@@ -135,7 +135,7 @@ export class Board {
 		es.onerror = () => {
 			if (es.readyState !== EventSource.CLOSED) this.connection = 'retrying';
 		};
-		for (const type of ['task', 'node', 'config'] as const) {
+		for (const type of ['task', 'node', 'config', 'project'] as const) {
 			es.addEventListener(type, (e) => this.onFrame(type, e as MessageEvent));
 		}
 		es.addEventListener('idle', () => {

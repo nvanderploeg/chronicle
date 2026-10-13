@@ -36,6 +36,14 @@ const BUILD_IT_STATES = [
 		animation: 'pulse'
 	},
 	{
+		key: 'review',
+		label: 'In review',
+		color: '#7dd3fc',
+		kind: 'review',
+		icon: '◎',
+		animation: 'none'
+	},
+	{
 		key: 'needs_input',
 		label: 'Needs input',
 		color: '#ef4444',

@@ -9,18 +9,25 @@ A workstate dashboard shows a task as steps and nested subtasks, live. The site 
 
 ## Pick the channel
 
-1. The MCP tools `start_task`, `update_step`, `update_task`, `get_task`, `configure`. In Claude Code they are `mcp__workstate__*` and may be deferred: load them with ToolSearch, query `workstate`. Codex sees them as tools of server `workstate`.
+1. The MCP tools `start_task`, `update_step`, `update_task`, `update_project`, `get_task`, `configure`. In Claude Code they are `mcp__workstate__*` and may be deferred: load them with ToolSearch, query `workstate`. Codex sees them as tools of server `workstate`.
 2. Otherwise the `workstate` CLI, if it is on PATH.
 3. Neither: skip tracking silently and do the work.
 
 ## Track the work
 
-1. **Start.** Call `start_task` with a title, a one-line summary and the planned steps. Keys are short and stable (`step-1`, or a slug like `parser`); they are the addresses every later write uses.
+1. **Start.** Call `start_task` with a title, a one-line summary and every step you already know, with the subtasks you already know nested under `subtasks`. They show as not started, so a viewer sees the whole plan and what is left. Keys are short and stable (`step-1`, or a slug like `parser`); they are the addresses every later write uses. Also pass:
+   - `agent`: your `tool` (`claude-code`, `codex`), `model` id and `effort` level.
+   - `links`: the ticket or issue the work is for (GitHub, Trello, Linear, Jira) and any spec or doc it follows.
+   - `project`: a short human name for this repo's project (`Billing API`). Without one the project gets a random three-word name. Pass it on the first task in a repo, and again only to rename.
+
+   `repo` and `branch` are read from git; pass them only to override. With three or four tasks running, these fields are what tell the cards apart.
 2. **Hand over the link.** In your next message to the user, before any of the real work, print the returned `url` as a link. Also try once to open it in their browser (`xdg-open`, `open` or `start`, in the background, output discarded); if that fails or there is no display, the printed link is enough. Do this once per task, not on later updates.
-3. **Update at each transition.** `update_step` with the step's `path`, its new `state`, a short `note` and `tags` where they help (`round 2`, `opus`). A state change clears the note unless you pass one. Subtasks are nodes below a step: `path: "step-1/tests"` creates it, and any missing ancestor.
-4. **Hand off.** Any agent holding the `taskId` may write any node; the last write wins. Put `workstate: task <taskId>` and the node path the subagent works under in every subagent brief. Subagents add subtasks under that path.
+3. **Write significant changes only.** `update_step` when a step or subtask changes state, hits a blocker, or produces something worth naming (a commit, a PR, a failing check), with a short `note`. Do not narrate progress within a state. Writes are rate limited per machine (120 per 5 minutes by default), and every agent on the machine shares that budget. A state change clears the note unless you pass one. Subtasks are nodes below a step: `path: "step-1/tests"` creates it, and any missing ancestor. Use `tags` for short facts (`round 2`, `worktree`); model and tool go in `agent`, not tags.
+4. **Hand off.** Any agent holding the `taskId` may write any node; the last write wins. Put `workstate: task <taskId>` and the node path the subagent works under in every subagent brief. A subagent sets `agent` (tool, model, effort) on its node when it starts, and adds subtasks under that path.
 5. **Re-sync.** After context compaction, call `get_task` for the real state of every node before writing again.
-6. **Finish.** Set the task's state with `update_task` to a done-, failed- or blocked-kind state: `done`, `failed` or `needs_input` in the default preset. Entering a done-kind state makes the dashboard celebrate and collapse the task into a badge.
+6. **Review.** When the work becomes a pull or merge request, set the task to `review` with `update_task` and pass `prs: [{ url }]`. The URL is enough: status, checks and review are filled in from `gh` or `glab` when they are installed and signed in, and kept current while the MCP server runs. When every PR merges, the task moves to `done` on its own. Without `gh` or `glab`, update `prs` yourself as the PR changes.
+7. **Finish.** Set the task's state with `update_task` to a done-, failed- or blocked-kind state: `done`, `failed` or `needs_input` in the default preset. Entering a done-kind state makes the dashboard celebrate and collapse the task into a badge. In the same call, add the PR or result to `links`; `links` replaces the list, so resend the ticket too. Add `agent: { tokens }` with the tokens you used, if you know them. Each subagent reports its own `tokens` on its node when it finishes. `agent` fields merge, so send only what is new.
+8. **Project notes.** When the repo's goal or context is worth a viewer knowing (what this push is for, who is waiting on it), set it once with `update_project` `notes`, and project-wide `links` (board, repo, spec).
 
 States are keys from the project's config. The default preset:
 
@@ -30,6 +37,7 @@ States are keys from the project's config. The default preset:
 | `planning` | being planned | active |
 | `in_work` | being built | active |
 | `testing` | being verified | active |
+| `review` | PR open, waiting on reviewers | review |
 | `needs_input` | waiting on a person | blocked |
 | `failed` | gave up | failed |
 | `done` | completed | done |
@@ -43,9 +51,14 @@ A tool answer starting with `workstate:` is a warning (unreachable server, unkno
 ## CLI
 
 ```
-workstate start "<title>" --summary "<s>" --step step-1="Title" --step step-2="Title"   # prints: <taskId> <url>
-workstate step <taskId> <path> <state> --note "<n>" --tag "round 2" --tag "opus|#a855f7"
-workstate task <taskId> <state> --note "<n>"
+workstate start "<title>" --summary "<s>" --project "Billing API" \
+  --step step-1="Title" --step step-1/tests="Tests" --step step-2="Title" \
+  --tool claude-code --model <id> --effort high --link "https://github.com/o/r/issues/7|#7"   # prints: <taskId> <url>
+workstate step <taskId> <path> <state> --note "<n>" --tag "round 2" --model <id>
+workstate task <taskId> review --pr "<pr url>" --tokens 182000
+workstate task <taskId> done --note "<n>" --link "<issue url>"
+workstate sync                                       # refresh PR status once (cron-friendly)
+workstate project --notes "<goal and context>" --link "https://trello.com/b/...|board"
 workstate get <taskId>                                                                  # prints JSON
 ```
 

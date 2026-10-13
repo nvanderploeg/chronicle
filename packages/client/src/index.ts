@@ -4,11 +4,14 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { DEFAULT_CANDIDATES, createDiscovery } from './discovery.ts';
 import { createStore, own, type ProjectEntry } from './files.ts';
 import { UNREACHABLE_WARNING, compact, request, type Failure, type RequestInit } from './http.ts';
-import { repoIdentity } from './repo.ts';
+import { fetchPr, isFinalPr, prTarget, runCommand } from './prs.ts';
+import { gitRefs, repoFromRemote, repoIdentity } from './repo.ts';
 import type {
+	AgentInfo,
 	ClientOptions,
 	DoctorReport,
 	Node,
+	Project,
 	ProjectConfig,
 	Result,
 	Task,
@@ -16,7 +19,15 @@ import type {
 } from './types.ts';
 
 export type * from './types.ts';
-export { DEFAULT_CANDIDATES, UNREACHABLE_WARNING, repoIdentity };
+export {
+	DEFAULT_CANDIDATES,
+	UNREACHABLE_WARNING,
+	fetchPr,
+	gitRefs,
+	prTarget,
+	repoFromRemote,
+	repoIdentity
+};
 
 const NO_PROJECT_WARNING = 'no workstate project for this repo yet — start a task first';
 
@@ -45,6 +56,15 @@ function projectUrlFrom(taskUrl: string, taskId: string, fallback: string): stri
 
 const taskPath = (taskId: string) => `/api/tasks/${encodeURIComponent(taskId)}`;
 
+// Name the tool an agent runs in when the caller did not, from what the tool sets in its shell.
+function withTool(
+	agent: AgentInfo | undefined,
+	env: Record<string, string | undefined>
+): AgentInfo | undefined {
+	if (agent?.tool || env.CLAUDECODE !== '1') return agent;
+	return { ...agent, tool: 'claude-code' };
+}
+
 async function guard<T>(run: () => Promise<Result<T>>): Promise<Result<T>> {
 	try {
 		const result = await run();
@@ -57,6 +77,9 @@ async function guard<T>(run: () => Promise<Result<T>>): Promise<Result<T>> {
 
 export function createClient(options: ClientOptions = {}): WorkstateClient {
 	const env = options.env ?? process.env;
+	const run = options.runCommand ?? runCommand;
+	// Tasks whose PRs have all merged or closed: nothing left to watch in this process.
+	const settledPrs = new Set<string>();
 	const fetchFn = options.fetch ?? globalThis.fetch;
 	const requestTimeoutMs = options.requestTimeoutMs ?? 2000;
 	const configDir =
@@ -86,20 +109,41 @@ export function createClient(options: ClientOptions = {}): WorkstateClient {
 
 	async function createProject(
 		server: string,
-		repoKey: string,
-		name: string
+		name: string | undefined
 	): Promise<{ ok: true; entry: ProjectEntry } | Failure> {
-		const reply = await send<{ id: string; writeKey: string; url?: string }>(
+		const reply = await send<{ id: string; writeKey: string; name?: string; url?: string }>(
 			server,
 			'/api/projects',
-			{ method: 'POST', body: { name } }
+			{ method: 'POST', body: compact({ name }) }
 		);
 		if (!reply.ok) return reply;
 		const { id, writeKey, url } = reply.body;
 		return {
 			ok: true,
-			entry: { projectId: id, writeKey, name, projectUrl: url || `${server}/p/${id}` }
+			entry: {
+				projectId: id,
+				writeKey,
+				name: reply.body.name ?? name ?? '',
+				projectUrl: url || `${server}/p/${id}`
+			}
 		};
+	}
+
+	async function renameProject(
+		server: string,
+		repoKey: string,
+		entry: ProjectEntry,
+		name: string
+	): Promise<ProjectEntry> {
+		const reply = await send<{ project: Project }>(
+			server,
+			`/api/projects/${encodeURIComponent(entry.projectId)}`,
+			{ method: 'PATCH', key: entry.writeKey, body: { name } }
+		);
+		if (!reply.ok) return entry;
+		const renamed = { ...entry, name: reply.body.project.name };
+		await store.saveProject(server, repoKey, renamed).catch(() => {});
+		return renamed;
 	}
 
 	async function targetFromTask(taskId: string): Promise<Result<Target>> {
@@ -146,29 +190,39 @@ export function createClient(options: ClientOptions = {}): WorkstateClient {
 		return { ok: true, value: { ...target.value, key: target.value.key } };
 	}
 
-	return {
+	const api: WorkstateClient = {
 		discover: () => discovery.discover().catch(() => null),
 
 		startTask: (input) =>
 			guard(async () => {
 				const server = await discovery.discover();
 				if (!server) return unreachable;
-				const { repoKey, name } = await repoIdentity(input.cwd ?? process.cwd());
+				const cwd = input.cwd ?? process.cwd();
+				const { repoKey } = await repoIdentity(cwd);
 				await store.assertReadable();
 
 				const resolved = await store.resolveProject(server, repoKey, () =>
-					createProject(server, repoKey, name)
+					createProject(server, input.project)
 				);
 				if (!resolved.ok) return resolved;
 				let entry = resolved.entry;
 				let createdProject = resolved.created;
+				if (!createdProject && input.project && input.project !== entry.name) {
+					entry = await renameProject(server, repoKey, entry, input.project);
+				}
 
+				const refs = await gitRefs(cwd);
 				const body = compact({
 					title: input.title,
 					summary: input.summary,
 					state: input.state,
 					note: input.note,
-					steps: input.steps
+					steps: input.steps,
+					agent: withTool(input.agent, env),
+					links: input.links,
+					prs: input.prs,
+					repo: input.repo ?? refs.repo,
+					branch: input.branch ?? refs.branch
 				});
 				const post = (e: ProjectEntry) =>
 					send<{ taskId: string; url: string }>(
@@ -182,7 +236,7 @@ export function createClient(options: ClientOptions = {}): WorkstateClient {
 					const replaced = await store.resolveProject(
 						server,
 						repoKey,
-						() => createProject(server, repoKey, name),
+						() => createProject(server, input.project),
 						entry
 					);
 					if (!replaced.ok) return replaced;
@@ -224,6 +278,8 @@ export function createClient(options: ClientOptions = {}): WorkstateClient {
 							state: input.state,
 							note: input.note,
 							tags: input.tags,
+							agent: input.agent,
+							links: input.links,
 							position: input.position
 						})
 					}
@@ -243,10 +299,70 @@ export function createClient(options: ClientOptions = {}): WorkstateClient {
 						title: input.title,
 						summary: input.summary,
 						state: input.state,
-						note: input.note
+						note: input.note,
+						agent: input.agent,
+						links: input.links,
+						prs: input.prs
 					})
 				});
 				return reply.ok ? { ok: true, value: { task: reply.body.task } } : reply;
+			}),
+
+		syncPrs: (input = {}) =>
+			guard(async () => {
+				const ids = input.taskIds ?? Object.keys(await store.readTasks());
+				const updated: string[] = [];
+				let checked = 0;
+				for (const taskId of ids) {
+					if (settledPrs.has(taskId)) continue;
+					const current = await api.getTask({ taskId });
+					if (!current.ok) continue;
+					const { task } = current.value;
+					if (task.prs.length === 0) continue;
+					if (task.prs.every(isFinalPr)) {
+						settledPrs.add(taskId);
+						continue;
+					}
+					checked += 1;
+					const prs = await Promise.all(
+						task.prs.map(async (pr) =>
+							isFinalPr(pr) ? pr : { ...pr, ...((await fetchPr(pr.url, run)) ?? {}) }
+						)
+					);
+					const state = prs.every((pr) => pr.state === 'merged')
+						? await mergedState(taskId, task.state)
+						: undefined;
+					if (JSON.stringify(prs) === JSON.stringify(task.prs) && !state) continue;
+					const write = await api.updateTask({
+						taskId,
+						prs,
+						...(state ? { state, note: 'merged' } : {})
+					});
+					if (write.ok) updated.push(taskId);
+				}
+				return { ok: true, value: { checked, updated } };
+			}),
+
+		updateProject: (input) =>
+			guard(async () => {
+				const target = await targetFor(input);
+				if (!target.ok) return target;
+				const { server, projectId, key, projectUrl } = target.value;
+				if (!key) {
+					return input.taskId === undefined
+						? { ok: false, warning: NO_PROJECT_WARNING }
+						: unknownTask(input.taskId);
+				}
+				const reply = await send<{ project: Project }>(
+					server,
+					`/api/projects/${encodeURIComponent(projectId)}`,
+					{
+						method: 'PATCH',
+						key,
+						body: compact({ name: input.name, notes: input.notes, links: input.links })
+					}
+				);
+				return reply.ok ? { ok: true, value: { project: reply.body.project, projectUrl } } : reply;
 			}),
 
 		getTask: (input) =>
@@ -337,4 +453,15 @@ export function createClient(options: ClientOptions = {}): WorkstateClient {
 			};
 		}
 	};
+
+	// A task waiting in a review-kind state moves to the first done-kind state once every PR merged.
+	async function mergedState(taskId: string, state: string): Promise<string | undefined> {
+		const read = await api.configure({ taskId });
+		if (!read.ok) return undefined;
+		const { states } = read.value.config;
+		if (states.find((s) => s.key === state)?.kind !== 'review') return undefined;
+		return states.find((s) => s.kind === 'done')?.key;
+	}
+
+	return api;
 }

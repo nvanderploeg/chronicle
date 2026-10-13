@@ -129,7 +129,8 @@ async function createProject(): Promise<{ id: string; writeKey: string }> {
 			body: JSON.stringify({ name: 'stream spec' })
 		}),
 		params: {},
-		url: new URL(url)
+		url: new URL(url),
+		getClientAddress: () => '10.0.0.1'
 	} as never);
 	expect(res.status).toBe(201);
 	return (await res.json()) as { id: string; writeKey: string };
@@ -148,7 +149,8 @@ async function createTask(
 			body: JSON.stringify(body)
 		}),
 		params: { id: projectId },
-		url: new URL(url)
+		url: new URL(url),
+		getClientAddress: () => '10.0.0.1'
 	} as never);
 	expect(res.status).toBe(201);
 	return (await res.json()) as { taskId: string };
@@ -177,7 +179,8 @@ async function putNode(
 			body: JSON.stringify(body)
 		}),
 		params: { taskId, path },
-		url: new URL(url)
+		url: new URL(url),
+		getClientAddress: () => '10.0.0.1'
 	} as never);
 	expect(res.status).toBe(200);
 }
@@ -193,7 +196,8 @@ async function getStream(
 	return getStreamRoute({
 		request: new Request(url, { headers }),
 		params: { id: projectId },
-		url: new URL(url)
+		url: new URL(url),
+		getClientAddress: () => '10.0.0.1'
 	} as never);
 }
 

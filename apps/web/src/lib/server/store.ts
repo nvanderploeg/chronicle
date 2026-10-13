@@ -2,6 +2,7 @@ import { and, asc, desc, eq, gt, inArray, isNull, max } from 'drizzle-orm';
 import { ApiError } from '#lib/server/api.ts';
 import { publish } from '#lib/server/bus.ts';
 import { db } from '#lib/server/db/index.ts';
+import { log } from '#lib/server/log.ts';
 import { events, nodes, projects, tasks } from '#lib/server/db/schema.ts';
 import {
 	toEvent,
@@ -12,8 +13,22 @@ import {
 	type ProjectRow,
 	type TaskRow
 } from '#lib/server/serialize.ts';
-import type { NodeInput, StepInput, TaskInput, TaskPatch } from '#lib/server/validate.ts';
-import type { Node, ProjectConfig, Snapshot, Task, WorkstateEvent } from '#lib/types.ts';
+import type {
+	NodeInput,
+	ProjectPatch,
+	StepInput,
+	TaskInput,
+	TaskPatch
+} from '#lib/server/validate.ts';
+import type {
+	AgentInfo,
+	Node,
+	Project,
+	ProjectConfig,
+	Snapshot,
+	Task,
+	WorkstateEvent
+} from '#lib/types.ts';
 
 export type { ProjectRow, TaskRow, NodeRow };
 
@@ -187,6 +202,37 @@ function isFinal(config: ProjectConfig, state: string): boolean {
 	return kind === 'done' || kind === 'failed';
 }
 
+// Fields merge so a later write can add tokens without restating the model.
+function mergeAgent(old: unknown, input: AgentInfo | undefined): AgentInfo | null {
+	const base = (old as AgentInfo | null) ?? null;
+	if (input === undefined) return base;
+	return { ...base, ...input };
+}
+
+const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+export async function patchProject(projectId: string, patch: ProjectPatch): Promise<Project> {
+	return mutate(projectId, async (ctx) => {
+		const [old] = await ctx.tx.select().from(projects).where(eq(projects.id, projectId));
+		const next = {
+			name: patch.name ?? old.name,
+			notes: patch.notes ?? old.notes ?? '',
+			links: patch.links ?? old.links ?? []
+		};
+		const project = toProject({ ...old, ...next });
+		if (
+			next.name === old.name &&
+			same(next.notes, old.notes ?? '') &&
+			same(next.links, old.links ?? [])
+		) {
+			return project;
+		}
+		await ctx.tx.update(projects).set(next).where(eq(projects.id, projectId));
+		await ctx.emit('project', null, null, project);
+		return project;
+	});
+}
+
 export async function replaceConfig(projectId: string, config: ProjectConfig) {
 	return mutate(projectId, async (ctx) => {
 		await ctx.tx.update(projects).set({ config }).where(eq(projects.id, projectId));
@@ -244,6 +290,8 @@ async function createNode(
 		state,
 		note: input.note ?? '',
 		tags: input.tags ?? [],
+		agent: input.agent ?? null,
+		links: input.links ?? [],
 		position: input.position ?? (await nextPosition(ctx, taskId, parentPath)),
 		createdAt: ctx.now,
 		updatedAt: ctx.now,
@@ -263,6 +311,8 @@ async function updateNode(ctx: Ctx, old: NodeRow, input: NodeInput): Promise<Nod
 		state: input.state ?? old.state,
 		note: input.note ?? (stateChanged ? '' : old.note),
 		tags: input.tags ?? old.tags,
+		agent: mergeAgent(old.agent, input.agent),
+		links: input.links ?? old.links ?? [],
 		position: input.position ?? old.position
 	};
 	const changed =
@@ -270,7 +320,9 @@ async function updateNode(ctx: Ctx, old: NodeRow, input: NodeInput): Promise<Nod
 		next.state !== old.state ||
 		next.note !== old.note ||
 		next.position !== old.position ||
-		JSON.stringify(next.tags) !== JSON.stringify(old.tags);
+		!same(next.tags, old.tags) ||
+		!same(next.agent, old.agent) ||
+		!same(next.links, old.links ?? []);
 	if (!changed) return toNode(old);
 	const row: NodeRow = {
 		...old,
@@ -333,6 +385,11 @@ export async function createTask(
 			summary: input.summary ?? '',
 			state,
 			note: input.note ?? '',
+			agent: input.agent ?? null,
+			links: input.links ?? [],
+			prs: input.prs ?? [],
+			repo: input.repo ?? null,
+			branch: input.branch ?? null,
 			createdAt: ctx.now,
 			updatedAt: ctx.now,
 			stateSince: ctx.now,
@@ -342,11 +399,24 @@ export async function createTask(
 		const task = toTask(row);
 		await ctx.emit('task', row.id, null, task);
 		const created: Node[] = [];
-		for (const [index, step] of (input.steps ?? []).entries()) {
-			created.push(await createNode(ctx, row.id, [step.key], stepInput(step, index)));
-		}
+		await createSteps(ctx, row.id, [], input.steps ?? [], created);
+		if (row.finishedAt) logFinish(ctx.projectId, task);
 		return { task, nodes: created };
 	});
+}
+
+async function createSteps(
+	ctx: Ctx,
+	taskId: string,
+	parent: string[],
+	steps: StepInput[],
+	created: Node[]
+): Promise<void> {
+	for (const [index, step] of steps.entries()) {
+		const segments = [...parent, step.key];
+		created.push(await createNode(ctx, taskId, segments, stepInput(step, index)));
+		await createSteps(ctx, taskId, segments, step.subtasks ?? [], created);
+	}
 }
 
 function stepInput(step: StepInput, index: number): NodeInput {
@@ -355,8 +425,22 @@ function stepInput(step: StepInput, index: number): NodeInput {
 		state: step.state,
 		note: step.note,
 		tags: step.tags,
+		agent: step.agent,
+		links: step.links,
 		position: index
 	};
+}
+
+function logFinish(projectId: string, task: Task): void {
+	log('task.finish', {
+		project: projectId,
+		task: task.id,
+		state: task.state,
+		seconds: Math.round((Date.parse(task.updatedAt) - Date.parse(task.createdAt)) / 1000),
+		tool: task.agent?.tool,
+		model: task.agent?.model,
+		tokens: task.agent?.tokens
+	});
 }
 
 export async function patchTask(
@@ -373,13 +457,23 @@ export async function patchTask(
 			title: patch.title ?? old.title,
 			summary: patch.summary ?? old.summary,
 			state: patch.state ?? old.state,
-			note: patch.note ?? (stateChanged ? '' : old.note)
+			note: patch.note ?? (stateChanged ? '' : old.note),
+			agent: mergeAgent(old.agent, patch.agent),
+			links: patch.links ?? old.links ?? [],
+			prs: patch.prs ?? old.prs ?? [],
+			repo: patch.repo ?? old.repo,
+			branch: patch.branch ?? old.branch
 		};
 		const changed =
 			next.title !== old.title ||
 			next.summary !== old.summary ||
 			next.state !== old.state ||
-			next.note !== old.note;
+			next.note !== old.note ||
+			next.repo !== old.repo ||
+			next.branch !== old.branch ||
+			!same(next.agent, old.agent) ||
+			!same(next.links, old.links ?? []) ||
+			!same(next.prs, old.prs ?? []);
 		if (!changed) return toTask(old);
 		const row: TaskRow = {
 			...old,
@@ -399,6 +493,7 @@ export async function patchTask(
 			.where(eq(tasks.id, taskId));
 		const task = toTask(row);
 		await ctx.emit('task', taskId, null, task);
+		if (stateChanged && row.finishedAt) logFinish(ctx.projectId, task);
 		return task;
 	});
 }

@@ -45,6 +45,9 @@ export function applyEvent(state: DashboardState, event: WorkstateEvent): Dashbo
 	if (event.type === 'config') {
 		const { config } = event.payload as { config: ProjectConfig };
 		next.project = { ...state.project, config };
+	} else if (event.type === 'project') {
+		const { name, notes, links } = event.payload as Project;
+		next.project = { ...state.project, name, notes, links };
 	} else if (event.type === 'task') {
 		next.tasks = upsertTask(state.tasks, event.payload as Task);
 	} else {
@@ -95,7 +98,8 @@ export function isStale(
 	now: number,
 	staleMs: number = STALE_MS
 ): boolean {
-	if (isFinishedKind(kindOf(config, task.state))) return false;
+	const kind = kindOf(config, task.state);
+	if (isFinishedKind(kind) || kind === 'review') return false;
 	return now - latestActivity(task, nodes) > staleMs;
 }
 

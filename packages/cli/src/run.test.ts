@@ -52,6 +52,8 @@ function fakeClient() {
 		startTask: vi.fn(),
 		updateStep: vi.fn(),
 		updateTask: vi.fn(),
+		updateProject: vi.fn(),
+		syncPrs: vi.fn(),
 		getTask: vi.fn(),
 		configure: vi.fn(),
 		projectUrl: vi.fn(),
@@ -693,4 +695,137 @@ describe('warnings from every Result command', () => {
 			expect(result.stdout).toBe('');
 		}
 	);
+});
+
+describe('agent info, links and nested steps', () => {
+	const ok = { ok: true, value: { taskId: 't', url: 'u' } };
+
+	it('nests --step a/b under a, creating a missing parent', async () => {
+		const client = fakeClient();
+		client.startTask.mockResolvedValue(ok);
+
+		await invoke(['start', 'T', '--step', 'a=A', '--step', 'a/x=X', '--step', 'b/y/z=Z'], client);
+
+		expect(client.startTask.mock.calls[0][0].steps).toEqual([
+			{ key: 'a', title: 'A', subtasks: [{ key: 'x', title: 'X' }] },
+			{ key: 'b', subtasks: [{ key: 'y', subtasks: [{ key: 'z', title: 'Z' }] }] }
+		]);
+	});
+
+	it('passes agent, links, project, repo and branch flags to startTask', async () => {
+		const client = fakeClient();
+		client.startTask.mockResolvedValue(ok);
+
+		await invoke(
+			[
+				'start',
+				'T',
+				'--tool',
+				'codex',
+				'--model',
+				'gpt',
+				'--effort',
+				'high',
+				'--link',
+				'https://github.com/me/r/issues/1|#1',
+				'--project',
+				'Billing',
+				'--repo',
+				'me/r',
+				'--branch',
+				'b'
+			],
+			client
+		);
+
+		expect(client.startTask.mock.calls[0][0]).toMatchObject({
+			agent: { tool: 'codex', model: 'gpt', effort: 'high' },
+			links: [{ url: 'https://github.com/me/r/issues/1', label: '#1' }],
+			project: 'Billing',
+			repo: 'me/r',
+			branch: 'b'
+		});
+	});
+
+	it('sends --tokens as a number on task and step updates', async () => {
+		const client = fakeClient();
+		client.updateTask.mockResolvedValue({ ok: true, value: { task: { id: 't', state: 'done' } } });
+		client.updateStep.mockResolvedValue({
+			ok: true,
+			value: { node: { path: 'a', state: 'done' } }
+		});
+
+		await invoke(['task', 't', 'done', '--tokens', '120000'], client);
+		await invoke(
+			['step', 't', 'a', 'done', '--model', 'haiku', '--link', 'https://x.test'],
+			client
+		);
+
+		expect(client.updateTask.mock.calls[0][0].agent).toEqual({ tokens: 120000 });
+		expect(client.updateStep.mock.calls[0][0]).toMatchObject({
+			agent: { model: 'haiku' },
+			links: [{ url: 'https://x.test' }]
+		});
+	});
+
+	it('rejects a non-numeric --tokens with exit 2', async () => {
+		const result = await invoke(['task', 't', '--tokens', 'lots'], fakeClient());
+
+		expect(result.code).toBe(2);
+		expect(result.stderr).toContain('bad --tokens: lots');
+	});
+
+	it('updates the project name, notes and links and prints the name and url', async () => {
+		const client = fakeClient();
+		client.updateProject.mockResolvedValue({
+			ok: true,
+			value: { project: { name: 'Billing' }, projectUrl: 'http://h/p/1' }
+		});
+
+		const result = await invoke(
+			['project', '--name', 'Billing', '--notes', 'why', '--link', 'https://trello.com/b/x|board'],
+			client
+		);
+
+		expect(client.updateProject).toHaveBeenCalledWith({
+			taskId: undefined,
+			cwd: undefined,
+			name: 'Billing',
+			notes: 'why',
+			links: [{ url: 'https://trello.com/b/x', label: 'board' }]
+		});
+		expect(result.stdout.trim()).toBe('Billing http://h/p/1');
+	});
+});
+
+describe('pull requests', () => {
+	it('sends each --pr as a pr url on start and task', async () => {
+		const client = fakeClient();
+		client.startTask.mockResolvedValue({ ok: true, value: { taskId: 't', url: 'u' } });
+		client.updateTask.mockResolvedValue({
+			ok: true,
+			value: { task: { id: 't', state: 'review' } }
+		});
+
+		await invoke(['start', 'T', '--pr', 'https://github.com/o/r/pull/1'], client);
+		await invoke(['task', 't', 'review', '--pr', 'https://github.com/o/r/pull/1'], client);
+
+		expect(client.startTask.mock.calls[0][0].prs).toEqual([
+			{ url: 'https://github.com/o/r/pull/1' }
+		]);
+		expect(client.updateTask.mock.calls[0][0]).toMatchObject({
+			state: 'review',
+			prs: [{ url: 'https://github.com/o/r/pull/1' }]
+		});
+	});
+
+	it('syncs PR status once and reports what it updated', async () => {
+		const client = fakeClient();
+		client.syncPrs.mockResolvedValue({ ok: true, value: { checked: 2, updated: ['t1'] } });
+
+		const result = await invoke(['sync', '--task', 't1', '--task', 't2'], client);
+
+		expect(client.syncPrs).toHaveBeenCalledWith({ taskIds: ['t1', 't2'] });
+		expect(result.stdout.trim()).toBe('checked 2, updated t1');
+	});
 });

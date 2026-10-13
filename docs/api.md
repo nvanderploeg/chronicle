@@ -12,7 +12,7 @@ Every package builds against this file. When behaviour and this file disagree, t
 ## Types
 
 ```ts
-type StateKind = 'pending' | 'active' | 'blocked' | 'failed' | 'done';
+type StateKind = 'pending' | 'active' | 'review' | 'blocked' | 'failed' | 'done'; // review: waiting on people, never stale
 type Animation = 'none' | 'pulse' | 'shimmer' | 'blink' | 'spin';
 type Theme = 'system' | 'light' | 'dark';
 
@@ -43,9 +43,33 @@ interface Tag {
 	color?: string; // same pattern as StateDef.color
 }
 
+// Who did the work. Fields merge on write: a later write can add tokens alone.
+interface AgentInfo {
+	tool?: string; // ≤ 64 chars: 'claude-code', 'codex'
+	model?: string; // ≤ 64 chars
+	effort?: string; // ≤ 64 chars: 'high', 'xhigh'
+	tokens?: number; // non-negative integer, usually sent when the work finishes
+}
+
+interface Link {
+	url: string; // http(s), ≤ 2048 chars
+	label?: string; // ≤ 100 chars
+}
+
+interface PullRequest {
+	url: string; // http(s), ≤ 2048 chars; GitHub `/pull/N` or GitLab `/-/merge_requests/N`
+	number?: number; // positive integer
+	title?: string; // ≤ 300 chars
+	state?: 'draft' | 'open' | 'merged' | 'closed';
+	checks?: 'pending' | 'passing' | 'failing';
+	review?: 'pending' | 'approved' | 'changes_requested';
+}
+
 interface Project {
 	id: string;
-	name: string;
+	name: string; // a three-word moniker when none was given
+	notes: string; // '' when unset
+	links: Link[]; // ≤ 20
 	config: ProjectConfig;
 	createdAt: string; // ISO 8601 UTC
 	lastWriteAt: string;
@@ -58,6 +82,11 @@ interface Task {
 	summary: string; // '' when unset
 	state: string;
 	note: string; // '' when unset
+	agent: AgentInfo | null; // the lead agent
+	links: Link[]; // ≤ 20
+	prs: PullRequest[]; // ≤ 10; replaced whole on write
+	repo: string | null; // 'owner/name', ≤ 255 chars
+	branch: string | null; // ≤ 255 chars
 	createdAt: string;
 	updatedAt: string;
 	stateSince: string; // last time `state` changed
@@ -74,6 +103,8 @@ interface Node {
 	state: string;
 	note: string;
 	tags: Tag[];
+	agent: AgentInfo | null; // the agent working this node
+	links: Link[];
 	position: number;
 	createdAt: string;
 	updatedAt: string;
@@ -89,10 +120,10 @@ interface Snapshot {
 
 interface WorkstateEvent {
 	seq: number;
-	type: 'config' | 'task' | 'node';
+	type: 'config' | 'project' | 'task' | 'node';
 	taskId: string | null;
 	path: string | null;
-	payload: { config: ProjectConfig } | Task | Node; // full row snapshot after the write
+	payload: { config: ProjectConfig } | Project | Task | Node; // full row snapshot after the write
 	at: string;
 }
 ```
@@ -109,7 +140,9 @@ Node upsert semantics:
 - Create when absent; update when present. `title` defaults to `key` on create.
 - Missing ancestors are created first (title = key, state = initialState), each with its own event.
 - `position` given → set; omitted on create → `1 + max(position)` among siblings (0 when first); omitted on update → unchanged.
-- `tags` given → replaces the array; omitted → unchanged.
+- `tags` and `links` given → replace the array; omitted → unchanged.
+- `agent` given → its fields merge into the stored object; omitted → unchanged. Tasks follow the same rule.
+- A write that changes nothing emits no event.
 
 ## HTTP
 
@@ -120,20 +153,22 @@ Writes (🔑) need `Authorization: Bearer <writeKey>` of the project that owns t
 | ------ | ----------------------------------- | ------------------------------------------------ | ----------------------------------------------------- |
 | GET    | `/api/health`                       | —                                                | 200 `{ service: 'workstate', version, db: 'ok' }`; 503 `{ service, version, db: 'unavailable' }` |
 | GET    | `/api/presets`                      | —                                                | 200 `{ presets: { name, config }[] }`                 |
-| POST   | `/api/projects`                     | `{ name?, preset?, config? }`                    | 201 `{ id, writeKey, url, config }`                   |
+| POST   | `/api/projects`                     | `{ name?, notes?, links?, preset?, config? }`    | 201 `{ id, name, writeKey, url, config }`             |
 | GET    | `/api/projects/:id`                 | —                                                | 200 `Snapshot`                                        |
+| PATCH 🔑 | `/api/projects/:id`                | `{ name?, notes?, links? }`                      | 200 `{ project }`                                     |
 | PUT 🔑  | `/api/projects/:id/config`          | `ProjectConfig`                                  | 200 `{ config }`                                      |
 | PATCH 🔑 | `/api/projects/:id/config`         | `ConfigPatch`                                    | 200 `{ config }`                                      |
-| POST 🔑 | `/api/projects/:id/tasks`           | `{ title, summary?, state?, note?, steps? }`     | 201 `{ taskId, url, task, nodes }`                    |
+| POST 🔑 | `/api/projects/:id/tasks`           | `{ title, summary?, state?, note?, agent?, links?, prs?, repo?, branch?, steps? }` | 201 `{ taskId, url, task, nodes }` |
 | GET    | `/api/tasks/:taskId`                | —                                                | 200 `{ task, nodes }`                                 |
 | GET    | `/api/tasks/:taskId/events`         | query `path?`                                    | 200 `{ events: WorkstateEvent[] }` (seq asc; `path` filters to that node) |
-| PATCH 🔑 | `/api/tasks/:taskId`               | `{ title?, summary?, state?, note? }`            | 200 `{ task }`                                        |
-| PUT 🔑  | `/api/tasks/:taskId/nodes/<path…>`  | `{ title?, state?, note?, tags?, position? }`    | 200 `{ node }`                                        |
+| PATCH 🔑 | `/api/tasks/:taskId`               | `{ title?, summary?, state?, note?, agent?, links?, prs?, repo?, branch? }` | 200 `{ task }`  |
+| PUT 🔑  | `/api/tasks/:taskId/nodes/<path…>`  | `{ title?, state?, note?, tags?, agent?, links?, position? }` | 200 `{ node }`               |
 | GET    | `/api/projects/:id/stream`          | header `Last-Event-ID` or query `since`          | 200 `text/event-stream`                               |
 
-- `POST /api/projects`: `name` defaults to `'Untitled project'`; `preset` defaults to `'build-it'`; `config`, when given, is used instead of the preset. Unknown preset or invalid config → 400. `url` = `<origin>/p/<id>`.
-- `steps` on task create: `{ key, title?, state?, note?, tags? }[]`, created as depth-1 nodes in array order. `url` = `<origin>/p/<projectId>/t/<taskId>`.
-- Every `POST`, `PUT` and `PATCH` under `/api` draws from a token bucket per client address: `WORKSTATE_WRITES_PER_MINUTE` (default 30) at once, refilled at that many a minute; `0` disables it. An empty bucket → 429 `{ error: 'too many writes from this address; retry later' }` with `Retry-After: <whole seconds>`, before the body or key is checked.
+- `POST /api/projects`: `name` defaults to a random three-word moniker (`Quiet Teal Otter`), returned in the body; `preset` defaults to `'build-it'`; `config`, when given, is used instead of the preset. Unknown preset or invalid config → 400. `url` = `<origin>/p/<id>`.
+- `steps` on task create: `{ key, title?, state?, note?, tags?, agent?, links?, subtasks? }[]`, created as depth-1 nodes in array order; `subtasks` has the same shape and nests to any depth, each level in array order. Keys must be unique among siblings. `url` = `<origin>/p/<projectId>/t/<taskId>`.
+- `PATCH /api/projects/:id` emits a `project` event carrying the whole `Project`.
+- Every `POST`, `PUT` and `PATCH` under `/api` draws from a token bucket per client address: `WORKSTATE_WRITES_PER_WINDOW` (default 120) at once, refilled at that many per `WORKSTATE_WRITE_WINDOW_MS` (default 300 000); `0` disables it. An empty bucket → 429 `{ error: 'too many writes from this address; retry later' }` with `Retry-After: <whole seconds>`, before the body or key is checked.
 - 401 `{ error: 'missing write key' }` with no bearer token; 403 `{ error: 'invalid write key' }` on mismatch; 404 `{ error: 'project not found' | 'task not found' }`; 400 for malformed ids, paths, or bodies.
 
 ## Stream
@@ -148,7 +183,7 @@ Writes (🔑) need `Authorization: Bearer <writeKey>` of the project that owns t
 
 ## Presets
 
-`build-it` (default): `theme: 'system'`, `initialState: 'queued'`.
+`build-it` (default): `theme: 'system'`, `initialState: 'queued'`. Migration `0003_review_state` adds `review` after `testing` to projects created before it existed, when their fourth state is still `testing`.
 
 | key         | label       | color     | kind    | icon | animation |
 | ----------- | ----------- | --------- | ------- | ---- | --------- |
@@ -156,6 +191,7 @@ Writes (🔑) need `Authorization: Bearer <writeKey>` of the project that owns t
 | planning    | Planning    | `#f97316` | active  | ◔    | shimmer   |
 | in_work     | In work     | `#eab308` | active  | ◑    | pulse     |
 | testing     | Testing     | `#a855f7` | active  | ◕    | pulse     |
+| review      | In review   | `#7dd3fc` | review  | ◎    | none      |
 | needs_input | Needs input | `#ef4444` | blocked | !    | blink     |
 | failed      | Failed      | `#ef4444` | failed  | ✕    | none      |
 | done        | Completed   | `#22c55e` | done    | ✓    | none      |
@@ -164,7 +200,13 @@ Writes (🔑) need `Authorization: Bearer <writeKey>` of the project that owns t
 
 Under `$XDG_CONFIG_HOME/workstate` (default `~/.config/workstate`), written atomically with mode 0600:
 
-- `projects.json` — `{ [server]: { [repoKey]: { projectId, writeKey, name, projectUrl? } } }`. `projectUrl` is the `url` the server returned at creation. `repoKey` = absolute `git rev-parse --path-format=absolute --git-common-dir` of the cwd, or the cwd's realpath outside git. `name` = basename of the repo root (parent of a common dir named `.git`), else basename of the cwd.
+- `projects.json` — `{ [server]: { [repoKey]: { projectId, writeKey, name, projectUrl? } } }`. `projectUrl` is the `url` the server returned at creation. `repoKey` = absolute `git rev-parse --path-format=absolute --git-common-dir` of the cwd, or the cwd's realpath outside git. `name` = the project name the server returned or a later rename set.
 - `tasks.json` — `{ [taskId]: { server, projectId, projectUrl? } }`. `projectUrl` is the task `url` minus `/t/<taskId>`.
 
 Discovery: `WORKSTATE_URL` set → only that server, never another. Otherwise probe `http://localhost:3280` then `https://workstate.nanzero.com` with `GET /api/health` (300 ms timeout for a loopback host, 2 s for any other; needs 2xx and `service === 'workstate'`), at every task start. Updates go to the server in the task's handle.
+
+`startTask` sends `repo` (`owner/name` from the `origin` remote) and `branch` (`git symbolic-ref --short HEAD`) of the cwd unless given, and `agent.tool = 'claude-code'` when `CLAUDECODE=1` and no tool was given. It sends `name` on project creation only when the caller passed `project`; a later `project` that differs from the registry entry renames the project once.
+
+## Server log
+
+One logfmt line per event on stdout: `<ISO time> <event> key=value…`. Events: `stream.open` (`project ip since`), `stream.close` (`project ip reason=client|idle|error seconds`), `ratelimit` (`ip method path retry_after`), `api.fail` (`ip method path status error`), `error` (unhandled, with stack), `project.create` (`id name ip`), `task.finish` (`project task state seconds tool model tokens`). Write keys and bodies are never logged.

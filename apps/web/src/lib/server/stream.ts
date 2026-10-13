@@ -8,6 +8,7 @@ export interface StreamOptions {
 	idleMs?: number;
 	heartbeatMs?: number;
 	now?: () => number;
+	onClose?: (reason: 'idle' | 'client' | 'error') => void;
 }
 
 const encoder = new TextEncoder();
@@ -49,7 +50,8 @@ export async function createProjectStream(
 		}
 	}
 
-	function cleanup(): void {
+	function cleanup(reason: 'idle' | 'client' | 'error' = 'client'): void {
+		if (!closed) options.onClose?.(reason);
 		closed = true;
 		unsubscribe?.();
 		unsubscribe = undefined;
@@ -63,7 +65,7 @@ export async function createProjectStream(
 			() => {
 				if (closed) return;
 				send('event: idle\ndata: {}\n\n');
-				cleanup();
+				cleanup('idle');
 				try {
 					controller.close();
 				} catch {
@@ -102,7 +104,7 @@ export async function createProjectStream(
 					}
 				}
 			} catch (error) {
-				cleanup();
+				cleanup('error');
 				controller.error(error);
 				return;
 			}

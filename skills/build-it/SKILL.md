@@ -46,21 +46,21 @@ Applies only when the `workstate` skill or the `workstate` MCP tools are availab
 
 | build-it moment | workstate write |
 |---|---|
-| grounding | `start_task` (plan title, summary), task state `planning` |
-| chunk list posted | each chunk as step `chunk-N`, state `queued`, tag `deps:…` |
-| prework for chunk N | `chunk-N` → `planning`, note `prework`, tag `sonnet` |
-| worker dispatched | `chunk-N` → `in_work`, tags `round 1`, model, `worktree` or `serial`; task → `in_work` |
+| grounding | `start_task` (plan title, summary, `agent`, the issue in `links`), task state `planning` |
+| chunk list posted | each chunk as step `chunk-N`, state `queued`, tag `deps:…`, with known subtasks (`tests`) nested |
+| prework for chunk N | `chunk-N` → `planning`, note `prework`, `agent.model` the prework model |
+| worker dispatched | `chunk-N` → `in_work`, tags `round 1`, `worktree` or `serial`, `agent` the worker's tool, model, effort; task → `in_work` |
 | parallel test agent | subtask `chunk-N/tests` → `in_work`; → `testing` at reconcile |
 | reviewer dispatched | `chunk-N` → `testing`, note `review round N` |
-| structural → repair round | `chunk-N` → `in_work`, tags `round 2`, `opus` |
+| structural → repair round | `chunk-N` → `in_work`, tag `round 2`, `agent.model` the repair model |
 | re-cut (round 3) | `chunk-N` → `planning`, note `re-cut`; pieces as `chunk-N/a`, `chunk-N/b` … |
 | comment sweep | `chunk-N` → `testing`, note `comment sweep` |
-| commit | `chunk-N` → `done`, note `<short sha> <subject>` |
+| commit | `chunk-N` → `done`, note `<short sha> <subject>`, `agent.tokens` the chunk's workers used |
 | stashed / stuck | `chunk-N` → `failed`, note the stash name |
 | question queued | tag `queued:grill` or `queued:issue` on the chunk |
 | Stop (one-way door) | the step and the task → `needs_input`, note = the question |
 | close-out full suite | task → `testing`, note `full suite` |
-| draft PR opened | task → `done`, note the PR URL |
+| draft PR opened | task → `review`, `prs: [{ url }]`, `agent.tokens` the lead used; it moves to `done` when the PR merges |
 
 ## 3. Run the chunks
 

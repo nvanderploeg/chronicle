@@ -7,26 +7,27 @@ interface Bucket {
 
 const PRUNE_ABOVE = 10_000;
 
-// A token bucket per key: `perMinute` writes at once, refilled at `perMinute` a minute. 0 disables it.
-export function createRateLimiter(perMinute: number) {
+// A token bucket per key: `perWindow` writes at once, refilled at `perWindow` every `windowMs`.
+// 0 disables it.
+export function createRateLimiter(perWindow: number, windowMs: number) {
 	const buckets = new Map<string, Bucket>();
-	const perMs = perMinute / 60_000;
+	const perMs = perWindow / windowMs;
 
 	function refilled(bucket: Bucket, now: number): number {
-		return Math.min(perMinute, bucket.tokens + (now - bucket.at) * perMs);
+		return Math.min(perWindow, bucket.tokens + (now - bucket.at) * perMs);
 	}
 
 	function prune(now: number): void {
 		for (const [key, bucket] of buckets) {
-			if (refilled(bucket, now) >= perMinute) buckets.delete(key);
+			if (refilled(bucket, now) >= perWindow) buckets.delete(key);
 		}
 	}
 
 	return {
 		take(key: string, now = Date.now()): Verdict {
-			if (perMinute <= 0) return { ok: true };
+			if (perWindow <= 0) return { ok: true };
 			const bucket = buckets.get(key);
-			const tokens = bucket ? refilled(bucket, now) : perMinute;
+			const tokens = bucket ? refilled(bucket, now) : perWindow;
 			if (tokens < 1) {
 				return { ok: false, retryAfterMs: Math.ceil((1 - tokens) / perMs) };
 			}

@@ -5,7 +5,10 @@ import { resetDb } from '#lib/server/test/db.ts';
 import { GET as getHealth } from '../../routes/api/health/+server.ts';
 import { GET as getPresets } from '../../routes/api/presets/+server.ts';
 import { POST as postProject } from '../../routes/api/projects/+server.ts';
-import { GET as getProjectHandler } from '../../routes/api/projects/[id]/+server.ts';
+import {
+	GET as getProjectHandler,
+	PATCH as patchProjectHandler
+} from '../../routes/api/projects/[id]/+server.ts';
 import {
 	PUT as putConfigHandler,
 	PATCH as patchConfigHandler
@@ -48,7 +51,16 @@ const ORIGIN = 'http://localhost';
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 const BUILD_IT = PRESETS['build-it'];
-const BUILD_IT_KEYS = ['queued', 'planning', 'in_work', 'testing', 'needs_input', 'failed', 'done'];
+const BUILD_IT_KEYS = [
+	'queued',
+	'planning',
+	'in_work',
+	'testing',
+	'review',
+	'needs_input',
+	'failed',
+	'done'
+];
 
 const CUSTOM_CONFIG = {
 	theme: 'dark',
@@ -89,7 +101,12 @@ function event({ method = 'GET', path, body, rawBody, key, params = {}, origin =
 		init.body = JSON.stringify(body);
 	}
 	if (key !== undefined) headers.set('authorization', `Bearer ${key}`);
-	return { request: new Request(url, init), params, url } as never;
+	return {
+		request: new Request(url, init),
+		params,
+		url,
+		getClientAddress: () => '10.0.0.1'
+	} as never;
 }
 
 const api = {
@@ -100,6 +117,10 @@ const api = {
 		postProject(event({ method: 'POST', path: '/api/projects', rawBody })),
 	getProject: (id: string) =>
 		getProjectHandler(event({ path: `/api/projects/${id}`, params: { id } })),
+	patchProject: (id: string, body: unknown, key?: string) =>
+		patchProjectHandler(
+			event({ method: 'PATCH', path: `/api/projects/${id}`, body, key, params: { id } })
+		),
 	putConfig: (id: string, body: unknown, key?: string) =>
 		putConfigHandler(
 			event({ method: 'PUT', path: `/api/projects/${id}/config`, body, key, params: { id } })
@@ -199,7 +220,7 @@ describe('POST /api/projects', () => {
 		const res = await api.createProject({});
 		expect(res.status).toBe(201);
 		const body = await res.json();
-		expect(Object.keys(body).sort()).toEqual(['config', 'id', 'url', 'writeKey']);
+		expect(Object.keys(body).sort()).toEqual(['config', 'id', 'name', 'url', 'writeKey']);
 		expect(body.id).toMatch(UUID_V4);
 		expect(typeof body.writeKey).toBe('string');
 		expect(body.writeKey.length).toBeGreaterThan(0);
@@ -214,10 +235,19 @@ describe('POST /api/projects', () => {
 		expect(a.writeKey).not.toBe(b.writeKey);
 	});
 
-	it('names the project Untitled project when no name is given', async () => {
+	it('names the project with a three-word moniker when no name is given', async () => {
 		const p = await newProject();
 		const snap = await snapshot(p.id);
-		expect(snap.project.name).toBe('Untitled project');
+		expect(snap.project.name).toMatch(/^[A-Z][a-z]+ [A-Z][a-z]+ [A-Z][a-z]+$/);
+		expect(snap.project.name).toBe((p as Proj & { name: string }).name);
+	});
+
+	it('stores notes and links given at creation', async () => {
+		const links = [{ url: 'https://trello.com/b/abc', label: 'Board' }];
+		const p = await newProject({ name: 'Demo', notes: 'Q4 billing work', links });
+		const snap = await snapshot(p.id);
+		expect(snap.project.notes).toBe('Q4 billing work');
+		expect(snap.project.links).toEqual(links);
 	});
 
 	it('uses the name it is given', async () => {
@@ -285,7 +315,9 @@ describe('GET /api/projects/:id', () => {
 		expect(res.status).toBe(200);
 		const snap = await res.json();
 		expect(snap.project.id).toBe(p.id);
-		expect(snap.project.name).toBe('Untitled project');
+		expect(typeof snap.project.name).toBe('string');
+		expect(snap.project.notes).toBe('');
+		expect(snap.project.links).toEqual([]);
 		expect(snap.project.config).toEqual(BUILD_IT);
 		expect(snap.project.createdAt).toMatch(ISO);
 		expect(snap.project.lastWriteAt).toMatch(ISO);
@@ -1159,5 +1191,224 @@ describe('PUT and PATCH /api/projects/:id/config', () => {
 			},
 			15000
 		);
+	});
+});
+
+describe('PATCH /api/projects/:id', () => {
+	it('renames the project and sets notes and links, publishing a project event', async () => {
+		const p = await newProject({ name: 'Old' });
+		const seen: Body[] = [];
+		const unsubscribe = subscribe(p.id, (e) => seen.push(e));
+		const links = [{ url: 'https://github.com/me/repo' }];
+		const res = await api.patchProject(p.id, { name: 'New', notes: 'Why', links }, p.writeKey);
+		unsubscribe();
+		expect(res.status).toBe(200);
+		const { project } = await res.json();
+		expect(project).toMatchObject({ id: p.id, name: 'New', notes: 'Why', links });
+		expect(seen.map((e) => e.type)).toEqual(['project']);
+		expect(seen[0].payload).toMatchObject({ name: 'New', notes: 'Why', links });
+	});
+
+	it('keeps fields it is not given and emits nothing when nothing changes', async () => {
+		const p = await newProject({ name: 'Keep', notes: 'n' });
+		const seen: Body[] = [];
+		const unsubscribe = subscribe(p.id, (e) => seen.push(e));
+		const res = await api.patchProject(p.id, { name: 'Keep' }, p.writeKey);
+		unsubscribe();
+		expect((await res.json()).project).toMatchObject({ name: 'Keep', notes: 'n' });
+		expect(seen).toEqual([]);
+	});
+
+	it('needs the write key', async () => {
+		const p = await newProject();
+		expect((await api.patchProject(p.id, { name: 'x' })).status).toBe(401);
+		expect((await api.patchProject(p.id, { name: 'x' }, 'ws_wrong')).status).toBe(403);
+	});
+
+	it('rejects a link that is not an http(s) URL', async () => {
+		const p = await newProject();
+		const res = await api.patchProject(
+			p.id,
+			{ links: [{ url: 'javascript:alert(1)' }] },
+			p.writeKey
+		);
+		expect(res.status).toBe(400);
+		expect((await res.json()).error).toBe('links[0].url must be an http(s) URL');
+	});
+});
+
+describe('agent info, links and refs', () => {
+	it('stores agent, links, repo and branch on a new task', async () => {
+		const p = await newProject();
+		const agent = { tool: 'claude-code', model: 'claude-opus-5-5', effort: 'high' };
+		const links = [{ url: 'https://github.com/me/repo/issues/7', label: '#7' }];
+		const { task } = await newTask(p, {
+			title: 'T',
+			agent,
+			links,
+			repo: 'me/repo',
+			branch: 'feat/x'
+		});
+		expect(task).toMatchObject({ agent, links, repo: 'me/repo', branch: 'feat/x' });
+	});
+
+	it('defaults agent to null, links to empty and refs to null', async () => {
+		const p = await newProject();
+		const { task, nodes } = await newTask(p, { title: 'T', steps: [{ key: 'a' }] });
+		expect(task).toMatchObject({ agent: null, links: [], repo: null, branch: null });
+		expect(nodes[0]).toMatchObject({ agent: null, links: [] });
+	});
+
+	it('merges agent fields on later writes, so tokens can arrive at completion', async () => {
+		const p = await newProject();
+		const { taskId } = await newTask(p, { title: 'T', agent: { tool: 'codex', model: 'gpt' } });
+		const res = await api.patchTask(
+			taskId,
+			{ state: 'done', agent: { tokens: 120_000 } },
+			p.writeKey
+		);
+		expect((await res.json()).task.agent).toEqual({ tool: 'codex', model: 'gpt', tokens: 120_000 });
+
+		await api.putNode(taskId, 'a', { agent: { model: 'haiku' } }, p.writeKey);
+		const node = await api.putNode(taskId, 'a', { agent: { tokens: 5 } }, p.writeKey);
+		expect((await node.json()).node.agent).toEqual({ model: 'haiku', tokens: 5 });
+	});
+
+	it('emits no event when an agent write changes nothing', async () => {
+		const p = await newProject();
+		const { taskId } = await newTask(p, { title: 'T' });
+		await api.putNode(taskId, 'a', { agent: { model: 'm' } }, p.writeKey);
+		const before = (await events(taskId, 'a')).length;
+		await api.putNode(taskId, 'a', { agent: { model: 'm' } }, p.writeKey);
+		expect(await events(taskId, 'a')).toHaveLength(before);
+	});
+
+	it('rejects negative or fractional tokens and over-long agent fields', async () => {
+		const p = await newProject();
+		const { taskId } = await newTask(p);
+		for (const agent of [{ tokens: -1 }, { tokens: 1.5 }, { model: 'x'.repeat(65) }, 'opus']) {
+			const res = await api.putNode(taskId, 'a', { agent }, p.writeKey);
+			expect(res.status).toBe(400);
+		}
+	});
+
+	it("replaces a node's links as a whole", async () => {
+		const p = await newProject();
+		const { taskId } = await newTask(p);
+		await api.putNode(taskId, 'a', { links: [{ url: 'https://a.test' }] }, p.writeKey);
+		const res = await api.putNode(taskId, 'a', { links: [{ url: 'https://b.test' }] }, p.writeKey);
+		expect((await res.json()).node.links).toEqual([{ url: 'https://b.test' }]);
+	});
+});
+
+describe('presubmitted subtasks', () => {
+	it('creates nested subtasks from steps[].subtasks in order, under their step', async () => {
+		const p = await newProject();
+		const { nodes } = await newTask(p, {
+			title: 'T',
+			steps: [
+				{
+					key: 'a',
+					subtasks: [
+						{ key: 'x', title: 'X' },
+						{ key: 'y', subtasks: [{ key: 'z' }] }
+					]
+				},
+				{ key: 'b' }
+			]
+		});
+		expect(nodes.map((n) => [n.path, n.parentPath, n.position, n.state])).toEqual([
+			['a', null, 0, 'queued'],
+			['a/x', 'a', 0, 'queued'],
+			['a/y', 'a', 1, 'queued'],
+			['a/y/z', 'a/y', 0, 'queued'],
+			['b', null, 1, 'queued']
+		]);
+		expect(nodes[1].title).toBe('X');
+	});
+
+	it('rejects duplicate keys among siblings', async () => {
+		const p = await newProject();
+		const res = await api.createTask(
+			p.id,
+			{ title: 'T', steps: [{ key: 'a', subtasks: [{ key: 'x' }, { key: 'x' }] }] },
+			p.writeKey
+		);
+		expect(res.status).toBe(400);
+		expect((await res.json()).error).toBe('duplicate step key "x"');
+	});
+});
+
+describe('pull requests on tasks', () => {
+	it('stores prs given at creation and replaces them as a whole on patch', async () => {
+		const p = await newProject();
+		const pr = {
+			url: 'https://github.com/me/repo/pull/42',
+			number: 42,
+			title: 'Add rate limiting',
+			state: 'open',
+			checks: 'pending',
+			review: 'pending'
+		};
+		const { task, taskId } = await newTask(p, { title: 'T', prs: [pr] });
+		expect(task.prs).toEqual([pr]);
+
+		const merged = { ...pr, state: 'merged', checks: 'passing', review: 'approved' };
+		const res = await api.patchTask(taskId, { state: 'done', prs: [merged] }, p.writeKey);
+		expect((await res.json()).task).toMatchObject({ state: 'done', prs: [merged] });
+	});
+
+	it('defaults prs to an empty list', async () => {
+		const p = await newProject();
+		expect((await newTask(p)).task.prs).toEqual([]);
+	});
+
+	it('emits no event when the same prs are sent again', async () => {
+		const p = await newProject();
+		const prs = [{ url: 'https://gitlab.com/g/p/-/merge_requests/3', state: 'draft' }];
+		const { taskId } = await newTask(p, { title: 'T', prs });
+		const before = (await events(taskId)).length;
+		await api.patchTask(taskId, { prs }, p.writeKey);
+		expect(await events(taskId)).toHaveLength(before);
+	});
+
+	it.each([
+		[{ url: 'ftp://x' }, 'prs[0].url must be an http(s) URL'],
+		[
+			{ url: 'https://x.test', state: 'approved' },
+			'prs[0].state must be one of draft, open, merged, closed'
+		],
+		[{ url: 'https://x.test', number: 0 }, 'prs[0].number must be a positive integer'],
+		[
+			{ url: 'https://x.test', checks: 'red' },
+			'prs[0].checks must be one of pending, passing, failing'
+		]
+	])('rejects %j', async (pr, error) => {
+		const p = await newProject();
+		const res = await api.createTask(p.id, { title: 'T', prs: [pr] }, p.writeKey);
+		expect(res.status).toBe(400);
+		expect((await res.json()).error).toBe(error);
+	});
+});
+
+describe('review kind', () => {
+	it('puts an In review state with the review kind after testing in build-it', () => {
+		const keys = BUILD_IT.states.map((s) => s.key);
+		expect(keys.indexOf('review')).toBe(keys.indexOf('testing') + 1);
+		expect(BUILD_IT.states.find((s) => s.key === 'review')).toMatchObject({
+			label: 'In review',
+			kind: 'review',
+			color: '#7dd3fc'
+		});
+	});
+
+	it('accepts review as a kind in a custom config', async () => {
+		const p = await newProject();
+		const res = await api.patchConfig(
+			p.id,
+			{ states: [{ key: 'qa', label: 'QA', color: '#123456', kind: 'review' }] },
+			p.writeKey
+		);
+		expect(res.status).toBe(200);
 	});
 });

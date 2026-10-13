@@ -8,6 +8,7 @@ import path from 'node:path';
 import {
 	createClient,
 	repoIdentity,
+	repoFromRemote,
 	UNREACHABLE_WARNING,
 	DEFAULT_CANDIDATES,
 	type ClientOptions,
@@ -19,6 +20,7 @@ import {
 const DEAD = 'http://127.0.0.1:9';
 const T = '2026-10-12T00:00:00.000Z';
 const REPO_KEY = '/work/repo/.git';
+const MONIKER = 'Quiet Teal Otter';
 
 const CONFIG: ProjectConfig = {
 	theme: 'system',
@@ -36,6 +38,11 @@ const TASK: Task = {
 	summary: '',
 	state: 'queued',
 	note: '',
+	agent: null,
+	links: [],
+	prs: [],
+	repo: null,
+	branch: null,
 	createdAt: T,
 	updatedAt: T,
 	stateSince: T,
@@ -52,6 +59,8 @@ const NODE: Node = {
 	state: 'done',
 	note: '',
 	tags: [],
+	agent: null,
+	links: [],
 	position: 0,
 	createdAt: T,
 	updatedAt: T,
@@ -144,7 +153,13 @@ function serveTasks(opts: { projectId?: string; writeKey?: string } = {}): Handl
 		if (req.method === 'POST' && req.path === '/api/projects') {
 			return {
 				status: 201,
-				body: { id: projectId, writeKey, url: `${origin}/p/${projectId}`, config: CONFIG }
+				body: {
+					id: projectId,
+					name: (req.body as { name?: string } | undefined)?.name ?? MONIKER,
+					writeKey,
+					url: `${origin}/p/${projectId}`,
+					config: CONFIG
+				}
 			};
 		}
 		if (req.method === 'POST' && req.path === `/api/projects/${projectId}/tasks`) {
@@ -410,7 +425,7 @@ describe('startTask', () => {
 		const posts = fake.requests.filter((r) => r.method === 'POST');
 		expect(posts).toHaveLength(2);
 		expect(posts[0].path).toBe('/api/projects');
-		expect(posts[0].body).toEqual({ name: path.basename(cwd) });
+		expect(posts[0].body).toEqual({});
 		expect(posts[1].path).toBe('/api/projects/proj-1/tasks');
 		expect(posts[1].headers.authorization).toBe('Bearer key-1');
 		expect(posts[1].body).toEqual({
@@ -426,7 +441,7 @@ describe('startTask', () => {
 				[cwd]: {
 					projectId: 'proj-1',
 					writeKey: 'key-1',
-					name: path.basename(cwd),
+					name: MONIKER,
 					projectUrl: `${fake.url}/p/proj-1`
 				}
 			}
@@ -483,7 +498,13 @@ describe('startTask', () => {
 				if (req.method === 'POST' && req.path === '/api/projects') {
 					return {
 						status: 201,
-						body: { id: 'proj-2', writeKey: 'key-2', url: `${origin}/p/proj-2`, config: CONFIG }
+						body: {
+							id: 'proj-2',
+							name: MONIKER,
+							writeKey: 'key-2',
+							url: `${origin}/p/proj-2`,
+							config: CONFIG
+						}
 					};
 				}
 				if (req.path === '/api/projects/proj-1/tasks') return { status, body: { error: 'stale' } };
@@ -526,7 +547,7 @@ describe('startTask', () => {
 					[cwd]: {
 						projectId: 'proj-2',
 						writeKey: 'key-2',
-						name: path.basename(cwd),
+						name: MONIKER,
 						projectUrl: `${fake.url}/p/proj-2`
 					}
 				}
@@ -1246,7 +1267,7 @@ describe('doctor', () => {
 			probes: [{ server: fake.url, ok: true, version: '0.1.0' }],
 			server: fake.url,
 			repoKey: cwd,
-			registered: { projectId: 'proj-1', name: path.basename(cwd) },
+			registered: { projectId: 'proj-1', name: MONIKER },
 			registryError: null
 		});
 	});
@@ -1410,5 +1431,228 @@ describe('repoIdentity', () => {
 		const plain = workDir();
 
 		expect((await repoIdentity(repo)).repoKey).not.toBe((await repoIdentity(plain)).repoKey);
+	});
+});
+
+describe('project names, refs and agent info', () => {
+	function withPatch(base: Handler): Handler {
+		return (req) =>
+			req.method === 'PATCH' && req.path === '/api/projects/proj-1'
+				? {
+						status: 200,
+						body: { project: { id: 'proj-1', name: (req.body as { name: string }).name } }
+					}
+				: base(req);
+	}
+
+	it('names a new project after `project` when given', async () => {
+		const fake = await startFake(serveTasks());
+		const client = makeClient({ candidates: [fake.url] });
+
+		await client.startTask({ title: 't', project: 'Billing revamp', cwd: workDir() });
+
+		expect(fake.requests.find((r) => r.path === '/api/projects')?.body).toEqual({
+			name: 'Billing revamp'
+		});
+	});
+
+	it('renames the registered project once when a later start names it differently', async () => {
+		const fake = await startFake(withPatch(serveTasks()));
+		const cwd = workDir();
+		const client = makeClient({ candidates: [fake.url] });
+
+		await client.startTask({ title: 'one', cwd });
+		await client.startTask({ title: 'two', project: 'Billing', cwd });
+		await client.startTask({ title: 'three', project: 'Billing', cwd });
+
+		const patches = fake.requests.filter((r) => r.method === 'PATCH');
+		expect(patches).toHaveLength(1);
+		expect(patches[0].headers.authorization).toBe('Bearer key-1');
+		expect(patches[0].body).toEqual({ name: 'Billing' });
+		expect(readFile('projects.json')).toMatchObject({ [fake.url]: { [cwd]: { name: 'Billing' } } });
+	});
+
+	it('sends the repo and branch of the git checkout it runs in', async () => {
+		const fake = await startFake(serveTasks());
+		const cwd = workDir();
+		git(cwd, ['init', '-q', '-b', 'feat/cards']);
+		git(cwd, ['remote', 'add', 'origin', 'git@github.com:me/work-state.git']);
+		const client = makeClient({ candidates: [fake.url] });
+
+		await client.startTask({ title: 't', cwd });
+
+		const post = fake.requests.find((r) => r.path === '/api/projects/proj-1/tasks');
+		expect(post?.body).toMatchObject({ repo: 'me/work-state', branch: 'feat/cards' });
+	});
+
+	it('lets explicit repo and branch win over git', async () => {
+		const fake = await startFake(serveTasks());
+		const cwd = workDir();
+		git(cwd, ['init', '-q', '-b', 'main']);
+		const client = makeClient({ candidates: [fake.url] });
+
+		await client.startTask({ title: 't', repo: 'x/y', branch: 'b', cwd });
+
+		const post = fake.requests.find((r) => r.path === '/api/projects/proj-1/tasks');
+		expect(post?.body).toMatchObject({ repo: 'x/y', branch: 'b' });
+	});
+
+	it('fills agent.tool with claude-code when CLAUDECODE=1 and the caller named no tool', async () => {
+		const fake = await startFake(serveTasks());
+		const client = makeClient({ candidates: [fake.url], env: { CLAUDECODE: '1' } });
+
+		await client.startTask({ title: 'a', agent: { model: 'opus' }, cwd: workDir() });
+		await client.startTask({ title: 'b', agent: { tool: 'codex' }, cwd: workDir() });
+
+		const posts = fake.requests.filter((r) => r.path === '/api/projects/proj-1/tasks');
+		expect((posts[0].body as { agent: unknown }).agent).toEqual({
+			model: 'opus',
+			tool: 'claude-code'
+		});
+		expect((posts[1].body as { agent: unknown }).agent).toEqual({ tool: 'codex' });
+	});
+
+	it('sends agent and links on step and task updates', async () => {
+		const fake = await startFake(
+			answering(() => ({ status: 200, body: { node: NODE, task: TASK } }))
+		);
+		seedHandle(fake.url);
+		const client = makeClient();
+		const links = [{ url: 'https://github.com/me/repo/pull/1', label: 'PR' }];
+
+		await client.updateStep({ taskId: 'task-1', path: 'a', agent: { tokens: 9 }, links });
+		await client.updateTask({ taskId: 'task-1', state: 'done', agent: { tokens: 10 } });
+
+		expect(fake.requests[0].body).toEqual({ agent: { tokens: 9 }, links });
+		expect(fake.requests[1].body).toEqual({ state: 'done', agent: { tokens: 10 } });
+	});
+
+	it('PATCHes the project from a task handle with updateProject', async () => {
+		const fake = await startFake(
+			answering(() => ({ status: 200, body: { project: { id: 'proj-1', name: 'N', notes: 'x' } } }))
+		);
+		seedHandle(fake.url);
+		const client = makeClient();
+
+		const result = await client.updateProject({ taskId: 'task-1', notes: 'x' });
+
+		expect(result.ok).toBe(true);
+		expect(fake.requests[0]).toMatchObject({
+			method: 'PATCH',
+			path: '/api/projects/proj-1',
+			body: { notes: 'x' }
+		});
+		expect(fake.requests[0].headers.authorization).toBe('Bearer key-1');
+	});
+});
+
+describe('repoFromRemote', () => {
+	it.each([
+		['git@github.com:me/work-state.git', 'me/work-state'],
+		['https://github.com/me/work-state', 'me/work-state'],
+		['https://gitlab.com/group/sub/proj.git', 'sub/proj'],
+		['ssh://git@host:2222/me/repo.git/', 'me/repo']
+	])('reads %s as %s', (remote, repo) => {
+		expect(repoFromRemote(remote)).toBe(repo);
+	});
+});
+
+describe('syncPrs', () => {
+	const PR = 'https://github.com/me/repo/pull/42';
+	const REVIEW_CONFIG = {
+		...CONFIG,
+		states: [
+			...CONFIG.states,
+			{ key: 'review', label: 'In review', color: '#7dd3fc', kind: 'review' as const }
+		]
+	};
+
+	function forge(state: string, extra: Record<string, unknown> = {}) {
+		return vi.fn(async () => JSON.stringify({ number: 42, title: 'T', state, ...extra }));
+	}
+
+	function serving(task: Partial<Task>) {
+		return answering((req) => {
+			if (req.method === 'GET' && req.path === '/api/tasks/task-1') {
+				return { status: 200, body: { task: { ...TASK, ...task }, nodes: [] } };
+			}
+			if (req.method === 'GET' && req.path === '/api/projects/proj-1') {
+				return { status: 200, body: { project: { config: REVIEW_CONFIG } } };
+			}
+			if (req.method === 'PATCH') return { status: 200, body: { task: TASK } };
+			return { status: 404, body: { error: 'not found' } };
+		});
+	}
+
+	it('writes the fresh PR status when it changed', async () => {
+		const fake = await startFake(serving({ state: 'review', prs: [{ url: PR, state: 'open' }] }));
+		seedHandle(fake.url);
+		const client = makeClient({
+			runCommand: forge('OPEN', { reviewDecision: 'APPROVED' })
+		});
+
+		const result = await client.syncPrs();
+
+		expect(result).toEqual({ ok: true, value: { checked: 1, updated: ['task-1'] } });
+		const patch = fake.requests.find((r) => r.method === 'PATCH');
+		expect(patch?.body).toEqual({
+			prs: [{ url: PR, number: 42, title: 'T', state: 'open', review: 'approved' }]
+		});
+	});
+
+	it('moves a task in review to done when every PR merged', async () => {
+		const fake = await startFake(serving({ state: 'review', prs: [{ url: PR, state: 'open' }] }));
+		seedHandle(fake.url);
+		const client = makeClient({ runCommand: forge('MERGED') });
+
+		await client.syncPrs();
+
+		const patch = fake.requests.find((r) => r.method === 'PATCH');
+		expect(patch?.body).toMatchObject({ state: 'done', note: 'merged' });
+	});
+
+	it('updates a merged PR but leaves a task outside review in its state', async () => {
+		const fake = await startFake(serving({ state: 'in_work', prs: [{ url: PR, state: 'open' }] }));
+		seedHandle(fake.url);
+		const client = makeClient({ runCommand: forge('MERGED') });
+
+		await client.syncPrs();
+
+		const patch = fake.requests.find((r) => r.method === 'PATCH');
+		expect(patch?.body).not.toHaveProperty('state');
+		expect((patch?.body as { prs: { state: string }[] }).prs[0].state).toBe('merged');
+	});
+
+	it('writes nothing when the forge reports what the dashboard already shows', async () => {
+		const pr = { url: PR, number: 42, title: 'T', state: 'open' };
+		const fake = await startFake(serving({ state: 'review', prs: [pr] }));
+		seedHandle(fake.url);
+		const client = makeClient({ runCommand: forge('OPEN') });
+
+		expect(await client.syncPrs()).toEqual({ ok: true, value: { checked: 1, updated: [] } });
+		expect(fake.requests.some((r) => r.method === 'PATCH')).toBe(false);
+	});
+
+	it('writes nothing when gh is unavailable', async () => {
+		const fake = await startFake(serving({ state: 'review', prs: [{ url: PR, state: 'open' }] }));
+		seedHandle(fake.url);
+		const client = makeClient({ runCommand: vi.fn(async () => null) });
+
+		await client.syncPrs();
+
+		expect(fake.requests.some((r) => r.method === 'PATCH')).toBe(false);
+	});
+
+	it('stops checking a task once all its PRs are merged or closed', async () => {
+		const fake = await startFake(serving({ state: 'done', prs: [{ url: PR, state: 'merged' }] }));
+		seedHandle(fake.url);
+		const run = forge('MERGED');
+		const client = makeClient({ runCommand: run });
+
+		await client.syncPrs();
+		await client.syncPrs();
+
+		expect(run).not.toHaveBeenCalled();
+		expect(fake.requests.filter((r) => r.path === '/api/tasks/task-1')).toHaveLength(1);
 	});
 });

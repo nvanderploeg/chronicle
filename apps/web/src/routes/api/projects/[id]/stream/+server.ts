@@ -1,5 +1,6 @@
 import type { RequestHandler } from './$types';
 import { ApiError, parseId, route } from '#lib/server/api.ts';
+import { log } from '#lib/server/log.ts';
 import { createProjectStream } from '#lib/server/stream.ts';
 
 function parseSince(request: Request, url: URL): number | undefined {
@@ -9,11 +10,23 @@ function parseSince(request: Request, url: URL): number | undefined {
 	return Number(raw);
 }
 
-export const GET: RequestHandler = route(async ({ request, params, url }) => {
+export const GET: RequestHandler = route(async ({ request, params, url, getClientAddress }) => {
 	const projectId = parseId(params.id, 'project');
 	const since = parseSince(request, url);
-	const stream = await createProjectStream(projectId, { since });
+	const ip = getClientAddress();
+	const openedAt = Date.now();
+	const stream = await createProjectStream(projectId, {
+		since,
+		onClose: (reason) =>
+			log('stream.close', {
+				project: projectId,
+				ip,
+				reason,
+				seconds: Math.round((Date.now() - openedAt) / 1000)
+			})
+	});
 	if (!stream) throw new ApiError(404, 'project not found');
+	log('stream.open', { project: projectId, ip, since });
 	return new Response(stream, {
 		headers: {
 			'content-type': 'text/event-stream',

@@ -20,8 +20,10 @@ class SimulateError extends Error {}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const tag = (text, color) => (color ? { text, color } : { text });
-const SONNET = tag('sonnet', '#0ea5e9');
-const OPUS = tag('opus', '#a855f7');
+const LEAD = { tool: 'claude-code', model: 'claude-opus-5-5', effort: 'high' };
+const SONNET = { agent: { tool: 'claude-code', model: 'claude-sonnet-5-5' } };
+const OPUS = { agent: { tool: 'claude-code', model: 'claude-opus-5-5', effort: 'high' } };
+const tokens = (n) => ({ agent: { tokens: n } });
 
 export async function simulate({
 	server = DEFAULT_SERVER,
@@ -59,7 +61,14 @@ export async function simulate({
 	if (projectId) {
 		project = { id: projectId, writeKey, url: `${origin}/p/${projectId}` };
 	} else {
-		const made = await request('POST', '/api/projects', { name: 'demo-repo' });
+		const made = await request('POST', '/api/projects', {
+			name: 'Demo API',
+			notes: 'Hardening the public API before the v2 launch.',
+			links: [
+				{ url: 'https://github.com/example/demo-repo', label: 'example/demo-repo' },
+				{ url: 'https://trello.com/b/abc123/demo-api' }
+			]
+		});
 		project = { id: made.id, writeKey: made.writeKey, url: made.url };
 	}
 	await onProject?.(project);
@@ -67,28 +76,34 @@ export async function simulate({
 
 	const stamp = () => `[${((Date.now() - t0) / 1000).toFixed(1).padStart(5)}s]`;
 
-	async function createTask(title, summary, steps) {
+	async function createTask(title, summary, steps, extra = {}) {
 		const made = await request(
 			'POST',
 			`/api/projects/${project.id}/tasks`,
-			{ title, summary, steps },
+			{ title, summary, steps, ...extra },
 			project.writeKey
 		);
 		log(`${stamp()} task "${title}" created`);
 		return made.taskId;
 	}
 
-	async function setTask(taskId, label, state, note) {
-		await request('PATCH', `/api/tasks/${taskId}`, { state, note }, project.writeKey);
+	async function setTask(taskId, label, state, note, extra = {}) {
+		await request('PATCH', `/api/tasks/${taskId}`, { state, note, ...extra }, project.writeKey);
 		log(`${stamp()} ${label} -> ${state}${note ? ` (${note})` : ''}`);
 	}
 
+	// `tags` may hold Tag objects and `{ agent }` / `{ links }` objects, which are merged into the body.
 	async function setStep(taskId, path, state, note, tags, title) {
 		const encoded = path.split('/').map(encodeURIComponent).join('/');
+		const extras = (tags ?? []).filter((t) => !t.text);
+		const tagList = (tags ?? []).filter((t) => t.text);
 		await request(
 			'PUT',
 			`/api/tasks/${taskId}/nodes/${encoded}`,
-			{ state, note, ...(title ? { title } : {}), ...(tags ? { tags } : {}) },
+			Object.assign(
+				{ state, note, ...(title ? { title } : {}), ...(tagList.length ? { tags: tagList } : {}) },
+				...extras
+			),
 			project.writeKey
 		);
 		log(`${stamp()} ${path} -> ${state}${note ? ` (${note})` : ''}`);
@@ -107,7 +122,13 @@ export async function simulate({
 					title: 'Wire limiter into middleware',
 					tags: [tag('deps:chunk-2,chunk-3')]
 				}
-			]
+			],
+			{
+				agent: LEAD,
+				repo: 'example/demo-repo',
+				branch: 'feat/rate-limit',
+				links: [{ url: 'https://github.com/example/demo-repo/issues/41' }]
+			}
 		);
 		await pause();
 		await setTask(id, 'task', 'planning');
@@ -137,7 +158,7 @@ export async function simulate({
 		await pause();
 		await setStep(id, 'chunk-1/tests', 'done', 'green');
 		await pause();
-		await setStep(id, 'chunk-1', 'done', 'a1b2c3d Add token bucket');
+		await setStep(id, 'chunk-1', 'done', 'a1b2c3d Add token bucket', [tokens(48_200)]);
 		await pause();
 
 		const routes = async () => {
@@ -160,7 +181,7 @@ export async function simulate({
 			await setStep(id, 'chunk-2', 'testing', 'review round 2');
 			await setStep(id, 'chunk-2/tests', 'done', 'green');
 			await pause();
-			await setStep(id, 'chunk-2', 'done', 'd4e5f6a Apply limits to routes');
+			await setStep(id, 'chunk-2', 'done', 'd4e5f6a Apply limits to routes', [tokens(61_900)]);
 		};
 
 		const headers = async () => {
@@ -179,7 +200,7 @@ export async function simulate({
 			await pause();
 			await setStep(id, 'chunk-3', 'testing', 'review round 2');
 			await pause();
-			await setStep(id, 'chunk-3', 'done', '9f8e7d6 Add rate limit headers');
+			await setStep(id, 'chunk-3', 'done', '9f8e7d6 Add rate limit headers', [tokens(102_400)]);
 		};
 
 		await setStep(id, 'chunk-2', 'planning', 'prework', [tag('deps:chunk-1'), SONNET]);
@@ -196,12 +217,28 @@ export async function simulate({
 		await pause();
 		await setStep(id, 'chunk-4', 'testing', 'review round 1');
 		await pause();
-		await setStep(id, 'chunk-4', 'done', 'b7c8d9e Wire limiter into middleware');
+		await setStep(id, 'chunk-4', 'done', 'b7c8d9e Wire limiter into middleware', [tokens(37_500)]);
 		await pause();
 
 		await setTask(id, 'task', 'testing', 'full suite');
 		await pause(1800);
-		await setTask(id, 'task', 'done', 'https://github.com/example/demo-repo/pull/42');
+		const pr = {
+			url: 'https://github.com/example/demo-repo/pull/42',
+			number: 42,
+			title: 'Add rate limiting to the API'
+		};
+		await setTask(id, 'task', 'review', 'draft PR opened', {
+			agent: { tokens: 88_000 },
+			prs: [{ ...pr, state: 'open', checks: 'pending', review: 'pending' }]
+		});
+		await pause(2500);
+		await setTask(id, 'task', 'review', 'checks green, awaiting review', {
+			prs: [{ ...pr, state: 'open', checks: 'passing', review: 'pending' }]
+		});
+		await pause(2500);
+		await setTask(id, 'task', 'done', 'merged', {
+			prs: [{ ...pr, state: 'merged', checks: 'passing', review: 'approved' }]
+		});
 		return id;
 	}
 

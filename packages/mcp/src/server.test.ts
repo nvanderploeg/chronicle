@@ -3,13 +3,15 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { WorkstateClient } from '@workstate/client';
-import { createServer } from './server.ts';
+import { createServer, type WatchOptions } from './server.ts';
 
 type Method =
 	| 'discover'
 	| 'startTask'
 	| 'updateStep'
 	| 'updateTask'
+	| 'updateProject'
+	| 'syncPrs'
 	| 'getTask'
 	| 'configure'
 	| 'projectUrl'
@@ -72,6 +74,10 @@ function fakeClient(): FakeClient {
 		),
 		updateStep: vi.fn(async () => okResult({ node: STEP_NODE })),
 		updateTask: vi.fn(async () => okResult({ task: TASK })),
+		syncPrs: vi.fn(async () => okResult({ checked: 0, updated: [] })),
+		updateProject: vi.fn(async () =>
+			okResult({ project: { id: 'proj1', name: 'P' }, projectUrl: `${SERVER}/p/proj1` })
+		),
 		getTask: vi.fn(async () => okResult({ task: TASK, nodes: [STEP_NODE], url: TASK_URL })),
 		configure: vi.fn(async () => okResult({ config: CONFIG, projectUrl: `${SERVER}/p/proj1` })),
 		projectUrl: vi.fn(async () => okResult({ url: `${SERVER}/p/proj1` })),
@@ -94,10 +100,14 @@ afterEach(async () => {
 	}
 });
 
-async function connect(client: FakeClient = fakeClient()) {
-	const server = createServer(client as unknown as WorkstateClient);
+async function connect(
+	client: FakeClient = fakeClient(),
+	clientName = 'test-agent',
+	watch: WatchOptions = { intervalMs: 0 }
+) {
+	const server = createServer(client as unknown as WorkstateClient, watch);
 	const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-	const mcp = new Client({ name: 'test-agent', version: '0.0.0' });
+	const mcp = new Client({ name: clientName, version: '0.0.0' });
 	await server.connect(serverTransport);
 	await mcp.connect(clientTransport);
 	closers.push(async () => {
@@ -131,7 +141,7 @@ describe('workstate MCP server', () => {
 	});
 
 	describe('tool listing', () => {
-		it('lists exactly the five workstate tools', async () => {
+		it('lists exactly the six workstate tools', async () => {
 			const { mcp } = await connect();
 
 			const { tools } = await mcp.listTools();
@@ -140,6 +150,7 @@ describe('workstate MCP server', () => {
 				'configure',
 				'get_task',
 				'start_task',
+				'update_project',
 				'update_step',
 				'update_task'
 			]);
@@ -165,13 +176,35 @@ describe('workstate MCP server', () => {
 		});
 
 		it.each([
-			['start_task', ['title'], ['cwd', 'note', 'state', 'steps', 'summary', 'title']],
+			[
+				'start_task',
+				['title'],
+				[
+					'agent',
+					'branch',
+					'cwd',
+					'links',
+					'note',
+					'project',
+					'prs',
+					'repo',
+					'state',
+					'steps',
+					'summary',
+					'title'
+				]
+			],
 			[
 				'update_step',
 				['path', 'taskId'],
-				['path', 'position', 'note', 'state', 'tags', 'taskId', 'title']
+				['agent', 'links', 'path', 'position', 'note', 'state', 'tags', 'taskId', 'title']
 			],
-			['update_task', ['taskId'], ['note', 'state', 'summary', 'taskId', 'title']],
+			[
+				'update_task',
+				['taskId'],
+				['agent', 'links', 'note', 'prs', 'state', 'summary', 'taskId', 'title']
+			],
+			['update_project', [], ['cwd', 'links', 'name', 'notes', 'taskId']],
 			['get_task', ['taskId'], ['taskId']],
 			['configure', [], ['config', 'cwd', 'patch', 'taskId']]
 		])(
@@ -195,6 +228,49 @@ describe('workstate MCP server', () => {
 	});
 
 	describe('forwarding to the client', () => {
+		it('names the tool from a Claude Code client when start_task names none', async () => {
+			const { mcp, client } = await connect(fakeClient(), 'claude-code');
+
+			await mcp.callTool({ name: 'start_task', arguments: { title: 't', agent: { model: 'm' } } });
+
+			expect(client.startTask).toHaveBeenCalledWith({
+				title: 't',
+				agent: { model: 'm', tool: 'claude-code' }
+			});
+		});
+
+		it('keeps an explicit tool over the client name', async () => {
+			const { mcp, client } = await connect(fakeClient(), 'codex-mcp-client');
+
+			await mcp.callTool({ name: 'start_task', arguments: { title: 't', agent: { tool: 'x' } } });
+
+			expect(client.startTask).toHaveBeenCalledWith({ title: 't', agent: { tool: 'x' } });
+		});
+
+		it('forwards nested subtasks, agent and links to startTask', async () => {
+			const { mcp, client } = await connect();
+			const args = {
+				title: 't',
+				steps: [{ key: 'a', subtasks: [{ key: 'b', subtasks: [{ key: 'c' }] }] }],
+				agent: { tool: 'codex', model: 'gpt', effort: 'high' },
+				links: [{ url: 'https://trello.com/c/x', label: 'card' }],
+				project: 'Billing'
+			};
+
+			await mcp.callTool({ name: 'start_task', arguments: args });
+
+			expect(client.startTask).toHaveBeenCalledWith(args);
+		});
+
+		it('forwards update_project to updateProject', async () => {
+			const { mcp, client } = await connect();
+			const args = { taskId: 'task1', name: 'N', notes: 'why', links: [{ url: 'https://x.test' }] };
+
+			await mcp.callTool({ name: 'update_project', arguments: args });
+
+			expect(client.updateProject).toHaveBeenCalledWith(args);
+		});
+
 		it('forwards every start_task argument unchanged to startTask', async () => {
 			const { mcp, client } = await connect();
 			const args = {
@@ -428,5 +504,65 @@ describe('workstate MCP server', () => {
 				expect(client[method]).not.toHaveBeenCalled();
 			}
 		);
+	});
+});
+
+describe('PR watcher', () => {
+	afterEach(() => vi.useRealTimers());
+
+	it('syncs every interval once connected', async () => {
+		vi.useFakeTimers();
+		const client = fakeClient();
+		await connect(client, 'test-agent', { intervalMs: 60_000, soonMs: 1_000 });
+
+		await vi.advanceTimersByTimeAsync(1_000);
+		expect(client.syncPrs).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(client.syncPrs).toHaveBeenCalledTimes(2);
+	});
+
+	it('checks a task soon after update_task sends prs', async () => {
+		vi.useFakeTimers();
+		const client = fakeClient();
+		const { mcp } = await connect(client, 'test-agent', { intervalMs: 600_000, soonMs: 1_000 });
+		await vi.advanceTimersByTimeAsync(1_000);
+		client.syncPrs.mockClear();
+
+		await mcp.callTool({
+			name: 'update_task',
+			arguments: {
+				taskId: 'task1',
+				state: 'review',
+				prs: [{ url: 'https://github.com/o/r/pull/1' }]
+			}
+		});
+		await vi.advanceTimersByTimeAsync(1_000);
+
+		expect(client.syncPrs).toHaveBeenCalledWith({ taskIds: ['task1'] });
+	});
+
+	it('never syncs when the interval is 0', async () => {
+		vi.useFakeTimers();
+		const client = fakeClient();
+		const { mcp } = await connect(client, 'test-agent', { intervalMs: 0 });
+
+		await mcp.callTool({
+			name: 'update_task',
+			arguments: { taskId: 'task1', prs: [{ url: 'https://github.com/o/r/pull/1' }] }
+		});
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+		expect(client.syncPrs).not.toHaveBeenCalled();
+	});
+
+	it('survives a sync that throws', async () => {
+		vi.useFakeTimers();
+		const client = fakeClient();
+		client.syncPrs.mockRejectedValue(new Error('boom'));
+		await connect(client, 'test-agent', { intervalMs: 60_000, soonMs: 1_000 });
+
+		await vi.advanceTimersByTimeAsync(61_000);
+
+		expect(client.syncPrs).toHaveBeenCalledTimes(2);
 	});
 });

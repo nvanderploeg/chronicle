@@ -18,14 +18,27 @@ _The simulator (`scripts/simulate.mjs`) driving the dashboard through a build-it
 - **Live.** Every write is pushed to open pages over SSE; a page that reconnects replays what it
   missed from the last `seq` it saw.
 - **Tasks, steps, subtasks.** A task holds steps (`chunk-1`) and subtasks at any depth
-  (`chunk-1/tests`), addressed by path and created on first write.
+  (`chunk-1/tests`), addressed by path. Agents list the whole known plan when they start, and later
+  writes create anything new.
+- **Tells runs apart.** Each card shows the repo and branch (read from git), the tool, model and
+  effort of the agent, and the tokens used so far, totalled across subagents. Steps show which
+  model works them.
+- **Tickets and references.** Tasks and steps carry links (GitHub issues and PRs, Trello, Linear,
+  Jira, docs), shown as chips that name the site.
+- **Pull requests.** A task in review shows its PRs or MRs as chips with state, checks and review
+  decision, one click from the PR. With `gh` or `glab` signed in, the MCP server keeps them current
+  and moves the task to done when its PRs merge.
+- **Project notes.** A project has a name (a three-word moniker such as `Quiet Teal Otter` until
+  an agent names it), notes on what the work is for, and project-wide links.
 - **States with meaning.** Each state has a label, color, icon, animation and a kind (`pending`,
   `active`, `blocked`, `failed`, `done`). Behavior follows the kind, so you can rename and recolor
   states freely.
 - **Celebrates and tidies.** A task entering a done state flashes green and collapses into a badge;
   when every task settles the page frame flashes. A blocked task puts `(!)` in the tab title.
+- **An eye on the tab.** The tab icon is an all-seeing eye whose frame takes the colour of the
+  most urgent state on the page.
 - **Per-node history.** Click a node title to see every transition with its note.
-- **Tags.** Short colored labels on a node (`round 2`, `opus`, `worktree`).
+- **Tags.** Short colored labels on a node (`round 2`, `worktree`).
 - **Stale detection.** A running task with no update for four hours is marked as one the agent may
   have stopped.
 - **Light, dark or system theme**, configurable per project.
@@ -127,27 +140,37 @@ own node path, so parallel workers show up as parallel rows.
 
 ### MCP tools
 
-| Tool          | Input                                                               | Does                                                           |
-| ------------- | ------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `start_task`  | `title`, `summary?`, `state?`, `note?`, `steps?`, `cwd?`            | Open a task on this repo's project; returns `taskId`, `url`.   |
-| `update_step` | `taskId`, `path`, `title?`, `state?`, `note?`, `tags?`, `position?` | Upsert a step or subtask by path (`chunk-2`, `chunk-2/tests`). |
-| `update_task` | `taskId`, `title?`, `summary?`, `state?`, `note?`                   | Change the task itself.                                        |
-| `get_task`    | `taskId`                                                            | Read a task and its nodes back (use after context compaction). |
-| `configure`   | `taskId?`, `cwd?`, `config?`, `patch?`                              | Read, replace or patch the project's states, colors, theme.    |
+| Tool             | Input                                                                                                        | Does                                                           |
+| ---------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| `start_task`     | `title`, `summary?`, `state?`, `note?`, `steps?`, `agent?`, `links?`, `project?`, `repo?`, `branch?`, `cwd?` | Open a task on this repo's project; returns `taskId`, `url`.   |
+| `update_step`    | `taskId`, `path`, `title?`, `state?`, `note?`, `tags?`, `agent?`, `links?`, `position?`                      | Upsert a step or subtask by path (`chunk-2`, `chunk-2/tests`). |
+| `update_task`    | `taskId`, `title?`, `summary?`, `state?`, `note?`, `agent?`, `links?`                                        | Change the task itself.                                        |
+| `update_project` | `taskId?`, `cwd?`, `name?`, `notes?`, `links?`                                                               | Rename the project, set its notes and project-wide links.      |
+| `get_task`       | `taskId`                                                                                                     | Read a task and its nodes back (use after context compaction). |
+| `configure`      | `taskId?`, `cwd?`, `config?`, `patch?`                                                                       | Read, replace or patch the project's states, colors, theme.    |
 
 A failure comes back as a text answer starting with `workstate:` (unreachable, unknown task,
 unknown state with the list of valid ones); the agent carries on. Details: `docs/client.md`.
 
+While connected, the MCP server checks open PRs every 3 minutes through `gh` or `glab` and writes
+only what changed. Set `WORKSTATE_PR_SYNC_MS` in its environment to change the interval, or `0` to
+turn it off.
+
 ### CLI
 
 ```sh
-id=$(workstate start "Add rate limiting" --summary "Token bucket per API key" \
-      --step chunk-1="Token bucket core" --step chunk-2="Apply limits" | cut -d' ' -f1)
+id=$(workstate start "Add rate limiting" --summary "Token bucket per API key" --project "Demo API" \
+      --step chunk-1="Token bucket core" --step chunk-1/tests="Tests" --step chunk-2="Apply limits" \
+      --tool claude-code --model claude-opus-5-5 --effort high \
+      --link "https://github.com/me/repo/issues/41" | cut -d' ' -f1)
 
-workstate step "$id" chunk-1 in_work --note "implementing" --tag "round 1" --tag "opus|#a855f7"
+workstate step "$id" chunk-1 in_work --note "implementing" --tag "round 1" --model claude-sonnet-5-5
 workstate step "$id" chunk-1/tests testing
+workstate step "$id" chunk-1 done --note "a1b2c3d Add token bucket" --tokens 48200
 workstate task "$id" needs_input --note "Limit per key or per IP?"
-workstate task "$id" done --note "https://github.com/me/repo/pull/42"
+workstate task "$id" review --pr "https://github.com/me/repo/pull/42" --tokens 88000
+workstate sync             # refresh PR status; the MCP server does this every 3 minutes
+workstate project --notes "Hardening the API before v2" --link "https://trello.com/b/abc|board"
 
 workstate get "$id"        # JSON of the task and its nodes
 workstate url "$id"        # the task page; without an id, the project page
@@ -257,15 +280,16 @@ DATABASE_URL=mysql://workstate:workstate@127.0.0.1:3316/workstate_dev \
 ORIGIN=http://localhost:3000 PORT=3000 node build
 ```
 
-| Variable                      | Meaning                                                                                                                                                                          |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                | MySQL connection string. Required outside dev and test mode.                                                                                                                     |
-| `ORIGIN`                      | Public origin the app is served at. The node adapter builds request URLs from it, so the `url` fields the API returns start with it.                                             |
-| `PORT`                        | Port the built app listens on (default 3000).                                                                                                                                    |
-| `WORKSTATE_IDLE_MS`           | Quiet time after the last write before a stream sends `idle` and closes. Default 14 400 000 (4 h).                                                                               |
-| `WORKSTATE_HEARTBEAT_MS`      | Interval between `: ping` keep-alives on a stream. Default 25 000.                                                                                                               |
-| `WORKSTATE_WRITES_PER_MINUTE` | Writes (`POST`/`PUT`/`PATCH` under `/api`) one client address may burst, refilled at this many a minute; the rest get 429 with `Retry-After`. Default 30; 0 turns the limit off. |
-| `ADDRESS_HEADER`              | Header the client address is read from behind a proxy (`x-real-ip` with the bundled nginx). Unset: the socket address.                                                           |
+| Variable                      | Meaning                                                                                                                                                                             |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                | MySQL connection string. Required outside dev and test mode.                                                                                                                        |
+| `ORIGIN`                      | Public origin the app is served at. The node adapter builds request URLs from it, so the `url` fields the API returns start with it.                                                |
+| `PORT`                        | Port the built app listens on (default 3000).                                                                                                                                       |
+| `WORKSTATE_IDLE_MS`           | Quiet time after the last write before a stream sends `idle` and closes. Default 14 400 000 (4 h).                                                                                  |
+| `WORKSTATE_HEARTBEAT_MS`      | Interval between `: ping` keep-alives on a stream. Default 25 000.                                                                                                                  |
+| `WORKSTATE_WRITES_PER_WINDOW` | Writes (`POST`/`PUT`/`PATCH` under `/api`) one client address may burst, refilled at this many per window; the rest get 429 with `Retry-After`. Default 120; 0 turns the limit off. |
+| `WORKSTATE_WRITE_WINDOW_MS`   | The refill window. Default 300 000 (5 min).                                                                                                                                         |
+| `ADDRESS_HEADER`              | Header the client address is read from behind a proxy (`x-real-ip` with the bundled nginx). Unset: the socket address.                                                              |
 
 The local `compose.yaml` passes only `DATABASE_URL` and `ORIGIN` to the app; set the other
 `WORKSTATE_*` variables when running the built app directly or through `deploy/compose.prod.yml`.

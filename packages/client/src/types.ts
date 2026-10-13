@@ -1,4 +1,4 @@
-export type StateKind = 'pending' | 'active' | 'blocked' | 'failed' | 'done';
+export type StateKind = 'pending' | 'active' | 'review' | 'blocked' | 'failed' | 'done';
 export type Animation = 'none' | 'pulse' | 'shimmer' | 'blink' | 'spin';
 export type Theme = 'system' | 'light' | 'dark';
 
@@ -28,9 +28,36 @@ export interface Tag {
 	color?: string;
 }
 
+export interface AgentInfo {
+	tool?: string;
+	model?: string;
+	effort?: string;
+	tokens?: number;
+}
+
+export interface Link {
+	url: string;
+	label?: string;
+}
+
+export type PrState = 'draft' | 'open' | 'merged' | 'closed';
+export type PrChecks = 'pending' | 'passing' | 'failing';
+export type PrReview = 'pending' | 'approved' | 'changes_requested';
+
+export interface PullRequest {
+	url: string;
+	number?: number;
+	title?: string;
+	state?: PrState;
+	checks?: PrChecks;
+	review?: PrReview;
+}
+
 export interface Project {
 	id: string;
 	name: string;
+	notes: string;
+	links: Link[];
 	config: ProjectConfig;
 	createdAt: string;
 	lastWriteAt: string;
@@ -43,6 +70,11 @@ export interface Task {
 	summary: string;
 	state: string;
 	note: string;
+	agent: AgentInfo | null;
+	links: Link[];
+	prs: PullRequest[];
+	repo: string | null;
+	branch: string | null;
 	createdAt: string;
 	updatedAt: string;
 	stateSince: string;
@@ -59,6 +91,8 @@ export interface Node {
 	state: string;
 	note: string;
 	tags: Tag[];
+	agent: AgentInfo | null;
+	links: Link[];
 	position: number;
 	createdAt: string;
 	updatedAt: string;
@@ -73,6 +107,7 @@ export interface ClientOptions {
 	probeTimeoutMs?: number;
 	remoteProbeTimeoutMs?: number;
 	requestTimeoutMs?: number;
+	runCommand?: (command: string, args: string[]) => Promise<string | null>;
 }
 
 export type Result<T> = { ok: true; value: T } | { ok: false; warning: string };
@@ -83,6 +118,9 @@ export interface StepInput {
 	state?: string;
 	note?: string;
 	tags?: Tag[];
+	agent?: AgentInfo;
+	links?: Link[];
+	subtasks?: StepInput[];
 }
 
 export interface DoctorReport {
@@ -103,6 +141,12 @@ export interface WorkstateClient {
 		state?: string;
 		note?: string;
 		steps?: StepInput[];
+		agent?: AgentInfo;
+		links?: Link[];
+		prs?: PullRequest[];
+		repo?: string;
+		branch?: string;
+		project?: string;
 		cwd?: string;
 	}): Promise<
 		Result<{
@@ -121,6 +165,8 @@ export interface WorkstateClient {
 		state?: string;
 		note?: string;
 		tags?: Tag[];
+		agent?: AgentInfo;
+		links?: Link[];
 		position?: number;
 	}): Promise<Result<{ node: Node }>>;
 	updateTask(input: {
@@ -129,7 +175,18 @@ export interface WorkstateClient {
 		summary?: string;
 		state?: string;
 		note?: string;
+		agent?: AgentInfo;
+		links?: Link[];
+		prs?: PullRequest[];
 	}): Promise<Result<{ task: Task }>>;
+	syncPrs(input?: { taskIds?: string[] }): Promise<Result<{ checked: number; updated: string[] }>>;
+	updateProject(input: {
+		taskId?: string;
+		cwd?: string;
+		name?: string;
+		notes?: string;
+		links?: Link[];
+	}): Promise<Result<{ project: Project; projectUrl: string }>>;
 	getTask(input: { taskId: string }): Promise<Result<{ task: Task; nodes: Node[]; url: string }>>;
 	configure(input: {
 		taskId?: string;

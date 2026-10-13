@@ -6,6 +6,9 @@
 	import { crossfade, slide } from 'svelte/transition';
 	import { Board, provideBoard } from '../ui/board.svelte.ts';
 	import type { Snapshot } from '../types.ts';
+	import { eyeColor, eyeSvg } from '../ui/meta.ts';
+	import Links from './Links.svelte';
+	import SiteFooter from './SiteFooter.svelte';
 	import StateMark from './StateMark.svelte';
 	import TaskCard from './TaskCard.svelte';
 
@@ -38,6 +41,13 @@
 
 	const project = $derived(board.state.project);
 	const title = $derived(taskId ? (board.tasks[0]?.title ?? project.name) : project.name);
+	const tabTitle = $derived(
+		taskId && board.tasks[0] ? `${board.tasks[0].title} · ${project.name}` : project.name
+	);
+	const frame = $derived(eyeColor(board.tasks, board.config));
+	const icon = $derived(
+		frame ? `data:image/svg+xml,${encodeURIComponent(eyeSvg(frame))}` : '/favicon.svg'
+	);
 	const connectionLabel = $derived(
 		{ connecting: 'Connecting', live: 'Live', retrying: 'Reconnecting', idle: 'Idle' }[
 			board.connection
@@ -46,7 +56,8 @@
 </script>
 
 <svelte:head>
-	<title>{board.blocked ? '(!) ' : ''}{title} · workstate</title>
+	<title>{board.blocked ? '(!) ' : ''}{tabTitle} · workstate</title>
+	<link rel="icon" type="image/svg+xml" href={icon} />
 </svelte:head>
 
 <div
@@ -70,6 +81,13 @@
 			<i aria-hidden="true"></i>{connectionLabel}
 		</span>
 	</header>
+
+	{#if !taskId && (project.notes || project.links.length)}
+		<section class="about" data-testid="project-about">
+			{#if project.notes}<p class="notes" data-testid="project-notes">{project.notes}</p>{/if}
+			{#if project.links.length}<div class="links"><Links links={project.links} /></div>{/if}
+		</section>
+	{/if}
 
 	<ul class="legend" aria-label="States" data-testid="legend">
 		{#each board.config.states as def (def.key)}
@@ -129,6 +147,8 @@
 		{/if}
 	</main>
 
+	<footer class="foot"><SiteFooter /></footer>
+
 	{#if board.connection === 'idle'}
 		<div class="overlay" role="status" data-testid="idle-overlay">
 			<div class="dialog">
@@ -141,6 +161,8 @@
 
 <style>
 	.board {
+		display: flex;
+		flex-direction: column;
 		--bg: light-dark(#e8ecef, #0d1114);
 		--panel: light-dark(#ffffff, #151b20);
 		--panel-2: light-dark(#f2f5f7, #1c242b);
@@ -177,6 +199,7 @@
 	}
 
 	.board > :not(.frame):not(.overlay) {
+		width: 100%;
 		max-width: 62rem;
 		margin-inline: auto;
 	}
@@ -247,6 +270,25 @@
 
 	.conn-retrying i {
 		background: #eab308;
+	}
+
+	.about {
+		margin-top: 0.75rem;
+	}
+
+	.notes {
+		max-width: 70ch;
+		margin: 0;
+		color: var(--muted);
+		white-space: pre-line;
+		overflow-wrap: anywhere;
+	}
+
+	.links {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+		margin-top: 0.5rem;
 	}
 
 	.legend {
@@ -328,6 +370,13 @@
 
 	.opened {
 		margin-bottom: 1rem;
+	}
+
+	.foot {
+		margin-top: auto;
+		padding-top: 3rem;
+		color: var(--muted);
+		text-align: center;
 	}
 
 	.empty {

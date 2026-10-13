@@ -3,6 +3,8 @@
 	import { slide } from 'svelte/transition';
 	import { nodeKey, useBoard } from '../ui/board.svelte.ts';
 	import { childrenOf, formatElapsed, stateOf, subtreeStates } from '../ui/dashboard.ts';
+	import AgentChip from './AgentChip.svelte';
+	import Links from './Links.svelte';
 	import NodeTree from './NodeTree.svelte';
 	import StateMark from './StateMark.svelte';
 	import Timeline from './Timeline.svelte';
@@ -47,6 +49,9 @@
 							>{def.label} · {formatElapsed(node.stateSince, board.now)}</span
 						>
 					</div>
+					{#if node.agent || node.links.length}
+						<div class="meta"><AgentChip agent={node.agent} /><Links links={node.links} /></div>
+					{/if}
 					{#if node.note}<p class="note">{node.note}</p>{/if}
 					{#if history}
 						{@const timeline = board.timelines.get(key)}
@@ -87,6 +92,14 @@
 {/if}
 
 <style>
+	.meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.25rem 0.6rem;
+		margin-top: 0.1rem;
+	}
+
 	.tree {
 		display: grid;
 		margin: 0;

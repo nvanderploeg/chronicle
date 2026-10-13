@@ -53,6 +53,14 @@ const BUILD_IT: ProjectConfig = {
 			animation: 'pulse'
 		},
 		{
+			key: 'review',
+			label: 'In review',
+			color: '#7dd3fc',
+			kind: 'review',
+			icon: '◎',
+			animation: 'none'
+		},
+		{
 			key: 'needs_input',
 			label: 'Needs input',
 			color: '#ef4444',
@@ -93,6 +101,10 @@ function task(over: Partial<Task> & { id: string }): Task {
 		summary: '',
 		state: 'queued',
 		note: '',
+		agent: null,
+		links: [],
+		repo: null,
+		branch: null,
 		createdAt: iso(T0),
 		updatedAt: iso(T0),
 		stateSince: iso(T0),
@@ -112,6 +124,8 @@ function node(over: Partial<Node> & { taskId: string; path: string }): Node {
 		state: 'queued',
 		note: '',
 		tags: [],
+		agent: null,
+		links: [],
 		position: 0,
 		createdAt: iso(T0),
 		updatedAt: iso(T0),
@@ -124,6 +138,8 @@ function project(over: Partial<Project> = {}): Project {
 	return {
 		id: 'p1',
 		name: 'Demo',
+		notes: '',
+		links: [],
 		config: BUILD_IT,
 		createdAt: iso(T0),
 		lastWriteAt: iso(T0),
@@ -156,6 +172,27 @@ function deepFreeze<T>(value: T): T {
 }
 
 describe('applyEvent', () => {
+	it('takes name, notes and links from a project event and keeps the config', () => {
+		const s = dashboard({ lastSeq: 1 });
+		const payload = {
+			...s.project,
+			name: 'Renamed',
+			notes: 'goals',
+			links: [{ url: 'https://trello.com/b/x' }],
+			config: { ...s.project.config, theme: 'dark' as const }
+		};
+		const next = applyEvent(s, {
+			seq: 2,
+			type: 'project',
+			taskId: null,
+			path: null,
+			payload,
+			at: iso(T0)
+		});
+		expect(next.project).toMatchObject({ name: 'Renamed', notes: 'goals', links: payload.links });
+		expect(next.project.config).toBe(s.project.config);
+	});
+
 	it('returns the same state reference when event.seq equals lastSeq', () => {
 		const s = dashboard({ tasks: [task({ id: 'a', createdAt: at(1) })], lastSeq: 5 });
 		const ev = taskEvent(5, { ...s.tasks[0], title: 'changed' });
@@ -389,6 +426,15 @@ describe('isStale', () => {
 
 	it('is true at STALE_MS + 1 ms since the last activity', () => {
 		expect(isStale(active, [], BUILD_IT, T0 + STALE_MS + 1)).toBe(true);
+	});
+
+	it('is never true for a task in review: it waits on people, not the agent', () => {
+		const inReview = { ...active, state: 'review' };
+		expect(isStale(inReview, [], BUILD_IT, T0 + 30 * DAY)).toBe(false);
+	});
+
+	it('keeps a task in review on the board as a card', () => {
+		expect(taskBucket({ ...active, state: 'review' }, BUILD_IT)).toBe('card');
 	});
 
 	it('uses STALE_MS when no staleMs is given', () => {

@@ -4,7 +4,7 @@ export const KEY_PATTERN = /^[a-z0-9_-]{1,32}$/;
 export const COLOR_PATTERN = /^[#a-zA-Z0-9(),.%\s-]{1,64}$/;
 
 const THEMES: readonly Theme[] = ['system', 'light', 'dark'];
-const KINDS: readonly StateKind[] = ['pending', 'active', 'blocked', 'failed', 'done'];
+const KINDS: readonly StateKind[] = ['pending', 'active', 'review', 'blocked', 'failed', 'done'];
 const ANIMATIONS: readonly Animation[] = ['none', 'pulse', 'shimmer', 'blink', 'spin'];
 
 type Outcome = { ok: true; config: ProjectConfig } | { ok: false; error: string };

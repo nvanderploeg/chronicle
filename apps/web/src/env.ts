@@ -11,10 +11,14 @@ export const variables = defineEnvVars({
 		description: 'Milliseconds without a project write before its stream sends `idle` and closes.',
 		schema: (value) => Number(value || 14_400_000)
 	},
-	WORKSTATE_WRITES_PER_MINUTE: {
+	WORKSTATE_WRITES_PER_WINDOW: {
 		description:
-			'Writes one client address may burst, refilled at this many a minute; excess gets 429. 0 disables the limit.',
-		schema: (value) => Number(value || 30)
+			'Writes one client address may burst, refilled at this many per write window; excess gets 429. 0 disables the limit.',
+		schema: (value) => Number(value || 120)
+	},
+	WORKSTATE_WRITE_WINDOW_MS: {
+		description: 'Milliseconds over which a client address regains its full write burst.',
+		schema: (value) => Number(value || 300_000)
 	},
 	WORKSTATE_HEARTBEAT_MS: {
 		description: 'Milliseconds between `: ping` heartbeats on a project stream.',

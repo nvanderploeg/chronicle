@@ -2,8 +2,12 @@
 	import { resolve } from '$app/paths';
 	import { useBoard } from '../ui/board.svelte.ts';
 	import { formatElapsed, isStale, latestActivity, stateOf } from '../ui/dashboard.ts';
+	import { totalTokens } from '../ui/meta.ts';
 	import type { Task } from '../types.ts';
+	import AgentChip from './AgentChip.svelte';
+	import Links from './Links.svelte';
 	import NodeTree from './NodeTree.svelte';
+	import PrChips from './PrChips.svelte';
 	import StateMark from './StateMark.svelte';
 
 	let { task, drill = false }: { task: Task; drill?: boolean } = $props();
@@ -13,6 +17,8 @@
 	const nodes = $derived(board.nodesOf(task.id));
 	const stale = $derived(isStale(task, nodes, board.config, board.now));
 	const flashing = $derived(board.finishing.has(task.id));
+	const tokens = $derived(totalTokens(task, nodes));
+	const ref = $derived([task.repo, task.branch].filter(Boolean).join(' @ '));
 </script>
 
 <article
@@ -39,6 +45,16 @@
 		</StateMark>
 	</header>
 
+	{#if task.prs.length}
+		<div class="prs" data-testid="task-prs"><PrChips prs={task.prs} /></div>
+	{/if}
+	{#if ref || task.agent || tokens || task.links.length}
+		<div class="meta" data-testid="task-meta">
+			{#if ref}<span class="ref" data-testid="task-ref">{ref}</span>{/if}
+			<AgentChip agent={task.agent} {tokens} />
+			<Links links={task.links} />
+		</div>
+	{/if}
 	{#if task.summary}<p class="summary">{task.summary}</p>{/if}
 	{#if task.note}<p class="note" data-testid="task-note">{task.note}</p>{/if}
 	{#if stale}
@@ -123,6 +139,29 @@
 
 	.open:hover {
 		color: var(--ink);
+	}
+
+	.prs {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		margin-top: 0.6rem;
+	}
+
+	.meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.35rem 0.75rem;
+		margin-top: 0.5rem;
+	}
+
+	.ref {
+		color: var(--ink);
+		font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+		font-size: 0.8rem;
+		font-weight: 600;
+		overflow-wrap: anywhere;
 	}
 
 	.summary {

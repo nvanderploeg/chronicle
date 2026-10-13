@@ -1,4 +1,6 @@
 <script lang="ts">
+	import SiteFooter from '#lib/components/SiteFooter.svelte';
+
 	const states = [
 		{
 			key: 'queued',
@@ -257,7 +259,7 @@ cd work-state && scripts/install.sh</code
 	</main>
 
 	<footer>
-		<a href="https://github.com/nvanderploeg/work-state">github.com/nvanderploeg/work-state</a>
+		<SiteFooter />
 	</footer>
 </div>
 

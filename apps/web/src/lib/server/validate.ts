@@ -1,13 +1,23 @@
 import { ApiError } from '#lib/server/api.ts';
 import { COLOR_PATTERN, isObject, validateConfig } from '#lib/server/config.ts';
+import { moniker } from '#lib/server/moniker.ts';
 import { PRESETS } from '#lib/server/presets.ts';
-import type { ProjectConfig, Tag } from '#lib/types.ts';
+import type { AgentInfo, Link, ProjectConfig, PullRequest, Tag } from '#lib/types.ts';
 
 const MAX_TEXT = 10_000;
 const MAX_NAME = 255;
 const MAX_PATH = 512;
 const SEGMENT = /^[A-Za-z0-9._-]{1,64}$/;
 const INT32_MAX = 2_147_483_647;
+const MAX_LINKS = 20;
+const MAX_URL = 2048;
+const MAX_LABEL = 100;
+const MAX_AGENT_FIELD = 64;
+const MAX_REF = 255;
+const MAX_PRS = 10;
+const PR_STATES = ['draft', 'open', 'merged', 'closed'] as const;
+const PR_CHECKS = ['pending', 'passing', 'failing'] as const;
+const PR_REVIEWS = ['pending', 'approved', 'changes_requested'] as const;
 
 type Body = Record<string, unknown>;
 
@@ -16,19 +26,14 @@ export interface NodeInput {
 	state?: string;
 	note?: string;
 	tags?: Tag[];
+	agent?: AgentInfo;
+	links?: Link[];
 	position?: number;
 }
 
 export interface StepInput extends NodeInput {
 	key: string;
-}
-
-export interface TaskInput {
-	title: string;
-	summary?: string;
-	state?: string;
-	note?: string;
-	steps?: StepInput[];
+	subtasks?: StepInput[];
 }
 
 export interface TaskPatch {
@@ -36,6 +41,22 @@ export interface TaskPatch {
 	summary?: string;
 	state?: string;
 	note?: string;
+	agent?: AgentInfo;
+	links?: Link[];
+	prs?: PullRequest[];
+	repo?: string;
+	branch?: string;
+}
+
+export interface TaskInput extends TaskPatch {
+	title: string;
+	steps?: StepInput[];
+}
+
+export interface ProjectPatch {
+	name?: string;
+	notes?: string;
+	links?: Link[];
 }
 
 function text(body: Body, field: string, opts: { nonEmpty?: boolean; max?: number } = {}) {
@@ -77,6 +98,87 @@ function tags(body: Body): Tag[] | undefined {
 	});
 }
 
+function agent(body: Body): AgentInfo | undefined {
+	const value = body.agent;
+	if (value === undefined) return undefined;
+	if (!isObject(value)) throw new ApiError(400, 'agent must be an object');
+	const info: AgentInfo = {};
+	for (const field of ['tool', 'model', 'effort'] as const) {
+		const v = text(value, field, { nonEmpty: true, max: MAX_AGENT_FIELD });
+		if (v !== undefined) info[field] = v;
+	}
+	if (value.tokens !== undefined) {
+		if (!Number.isSafeInteger(value.tokens) || (value.tokens as number) < 0) {
+			throw new ApiError(400, 'agent.tokens must be a non-negative integer');
+		}
+		info.tokens = value.tokens as number;
+	}
+	return info;
+}
+
+function links(body: Body): Link[] | undefined {
+	const value = body.links;
+	if (value === undefined) return undefined;
+	if (!Array.isArray(value) || value.length > MAX_LINKS) {
+		throw new ApiError(400, `links must be an array of at most ${MAX_LINKS}`);
+	}
+	return value.map((raw, index) => {
+		if (!isObject(raw)) throw new ApiError(400, `links[${index}] must be an object`);
+		const url = raw.url;
+		if (typeof url !== 'string' || url.length > MAX_URL || !/^https?:\/\/\S+$/i.test(url)) {
+			throw new ApiError(400, `links[${index}].url must be an http(s) URL`);
+		}
+		const link: Link = { url };
+		const label = text(raw, 'label', { nonEmpty: true, max: MAX_LABEL });
+		if (label !== undefined) link.label = label;
+		return link;
+	});
+}
+
+function oneOf<T extends string>(
+	raw: Body,
+	field: string,
+	at: string,
+	allowed: readonly T[]
+): T | undefined {
+	const value = raw[field];
+	if (value === undefined) return undefined;
+	if (typeof value !== 'string' || !allowed.includes(value as T)) {
+		throw new ApiError(400, `${at}.${field} must be one of ${allowed.join(', ')}`);
+	}
+	return value as T;
+}
+
+function prs(body: Body): PullRequest[] | undefined {
+	const value = body.prs;
+	if (value === undefined) return undefined;
+	if (!Array.isArray(value) || value.length > MAX_PRS) {
+		throw new ApiError(400, `prs must be an array of at most ${MAX_PRS}`);
+	}
+	return value.map((raw, index) => {
+		const at = `prs[${index}]`;
+		if (!isObject(raw)) throw new ApiError(400, `${at} must be an object`);
+		const url = raw.url;
+		if (typeof url !== 'string' || url.length > MAX_URL || !/^https?:\/\/\S+$/i.test(url)) {
+			throw new ApiError(400, `${at}.url must be an http(s) URL`);
+		}
+		if (
+			raw.number !== undefined &&
+			(!Number.isSafeInteger(raw.number) || (raw.number as number) < 1)
+		) {
+			throw new ApiError(400, `${at}.number must be a positive integer`);
+		}
+		return defined({
+			url,
+			number: raw.number as number | undefined,
+			title: text(raw, 'title', { nonEmpty: true, max: 300 }),
+			state: oneOf(raw, 'state', at, PR_STATES),
+			checks: oneOf(raw, 'checks', at, PR_CHECKS),
+			review: oneOf(raw, 'review', at, PR_REVIEWS)
+		});
+	});
+}
+
 function position(body: Body): number | undefined {
 	const value = body.position;
 	if (value === undefined) return undefined;
@@ -96,38 +198,31 @@ export function parseNodeBody(body: Body): NodeInput {
 		state: stateField(body),
 		note: text(body, 'note'),
 		tags: tags(body),
+		agent: agent(body),
+		links: links(body),
 		position: position(body)
 	});
 }
 
-function parseStep(raw: unknown, index: number): StepInput {
-	if (!isObject(raw)) throw new ApiError(400, `steps[${index}] must be an object`);
-	if (typeof raw.key !== 'string' || !SEGMENT.test(raw.key)) {
-		throw new ApiError(400, `steps[${index}].key must match ${SEGMENT}`);
-	}
-	const { title, state, note, tags } = parseNodeBody(raw);
-	return defined({ key: raw.key, title, state, note, tags });
-}
-
-export function parseTaskCreate(body: Body): TaskInput {
-	const title = text(body, 'title', { nonEmpty: true });
-	if (title === undefined) throw new ApiError(400, 'title is required');
-	let steps: StepInput[] | undefined;
-	if (body.steps !== undefined) {
-		if (!Array.isArray(body.steps)) throw new ApiError(400, 'steps must be an array');
-		steps = body.steps.map(parseStep);
-		const keys = new Set<string>();
-		for (const step of steps) {
-			if (keys.has(step.key)) throw new ApiError(400, `duplicate step key "${step.key}"`);
-			keys.add(step.key);
+function parseSteps(raw: unknown, at: string, parentPath: string): StepInput[] {
+	if (!Array.isArray(raw)) throw new ApiError(400, `${at} must be an array`);
+	const keys = new Set<string>();
+	return raw.map((item, index) => {
+		const where = `${at}[${index}]`;
+		if (!isObject(item)) throw new ApiError(400, `${where} must be an object`);
+		if (typeof item.key !== 'string' || !SEGMENT.test(item.key)) {
+			throw new ApiError(400, `${where}.key must match ${SEGMENT}`);
 		}
-	}
-	return defined({
-		title,
-		summary: text(body, 'summary'),
-		state: stateField(body),
-		note: text(body, 'note'),
-		steps
+		if (keys.has(item.key)) throw new ApiError(400, `duplicate step key "${item.key}"`);
+		keys.add(item.key);
+		const path = parentPath ? `${parentPath}/${item.key}` : item.key;
+		if (path.length > MAX_PATH) throw new ApiError(400, `${where} path is too long`);
+		const { title, state, note, tags, agent, links } = parseNodeBody(item);
+		const subtasks =
+			item.subtasks === undefined
+				? undefined
+				: parseSteps(item.subtasks, `${where}.subtasks`, path);
+		return defined({ key: item.key, title, state, note, tags, agent, links, subtasks });
 	});
 }
 
@@ -136,7 +231,22 @@ export function parseTaskPatch(body: Body): TaskPatch {
 		title: text(body, 'title', { nonEmpty: true }),
 		summary: text(body, 'summary'),
 		state: stateField(body),
-		note: text(body, 'note')
+		note: text(body, 'note'),
+		agent: agent(body),
+		links: links(body),
+		prs: prs(body),
+		repo: text(body, 'repo', { nonEmpty: true, max: MAX_REF }),
+		branch: text(body, 'branch', { nonEmpty: true, max: MAX_REF })
+	});
+}
+
+export function parseTaskCreate(body: Body): TaskInput {
+	const title = text(body, 'title', { nonEmpty: true });
+	if (title === undefined) throw new ApiError(400, 'title is required');
+	return defined({
+		...parseTaskPatch(body),
+		title,
+		steps: body.steps === undefined ? undefined : parseSteps(body.steps, 'steps', '')
 	});
 }
 
@@ -153,8 +263,26 @@ export function parsePath(raw: string | null | undefined): string[] {
 	return segments;
 }
 
-export function parseProjectCreate(body: Body): { name: string; config: ProjectConfig } {
-	const name = text(body, 'name', { nonEmpty: true, max: MAX_NAME }) ?? 'Untitled project';
+export function parseProjectPatch(body: Body): ProjectPatch {
+	return defined({
+		name: text(body, 'name', { nonEmpty: true, max: MAX_NAME }),
+		notes: text(body, 'notes'),
+		links: links(body)
+	});
+}
+
+export function parseProjectCreate(body: Body): {
+	name: string;
+	notes: string;
+	links: Link[];
+	config: ProjectConfig;
+} {
+	const patch = parseProjectPatch(body);
+	const fields = {
+		name: patch.name ?? moniker(),
+		notes: patch.notes ?? '',
+		links: patch.links ?? []
+	};
 	let preset: ProjectConfig | undefined;
 	if (body.preset !== undefined) {
 		if (typeof body.preset !== 'string' || !Object.hasOwn(PRESETS, body.preset)) {
@@ -165,7 +293,7 @@ export function parseProjectCreate(body: Body): { name: string; config: ProjectC
 	if (body.config !== undefined) {
 		const result = validateConfig(body.config);
 		if (!result.ok) throw new ApiError(400, result.error);
-		return { name, config: result.config };
+		return { ...fields, config: result.config };
 	}
-	return { name, config: structuredClone(preset ?? PRESETS['build-it']) };
+	return { ...fields, config: structuredClone(preset ?? PRESETS['build-it']) };
 }

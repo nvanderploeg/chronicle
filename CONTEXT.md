@@ -29,10 +29,28 @@ Agent-chosen keys joined by `/` that address a Node within a Task (`chunk-2`, `c
 A key from the Project's Config, set on a Task or Node. Its label, color, icon and animation come from the Config; an unknown key renders with a fallback.
 
 **Kind**:
-The meaning of a State: `pending`, `active`, `blocked`, `failed` or `done`. Behaviour (finished, stale, settled) keys off Kind, never off the State key.
+The meaning of a State: `pending`, `active`, `review`, `blocked`, `failed` or `done`. Behaviour (finished, stale, settled) keys off Kind, never off the State key.
 
 **Tag**:
 Short colored text attached to a Node, such as `round 2`.
+
+**Agent info**:
+The tool, model, effort and token count of whoever works a Task (the lead agent) or a Node (a subagent). Fields merge on write; a card totals the tokens of its Task and Nodes.
+
+**Link**:
+A URL with an optional label on a Project, Task or Node: the ticket, PR, board or doc the work refers to.
+
+**PR**:
+A pull or merge request on a Task, with its state, checks and review decision. A Task waits in a `review`-kind State while its PRs are open; `review` never goes Stale.
+
+**PR watcher**:
+The MCP server's loop (and `workstate sync`) that refreshes open PRs through `gh` or `glab` and finishes a Task in review once all its PRs merged.
+
+**Moniker**:
+The three-word name (`Quiet Teal Otter`) a Project gets when created without one. Tells projects apart; not unique.
+
+**Notes**:
+Free text on a Project saying what its work is for.
 
 **Preset**:
 A named starting Config. `build-it` is the default.

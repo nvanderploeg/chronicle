@@ -46,7 +46,10 @@ function route(req: Recorded, origin: string, counters: { projects: number; task
 	if (req.method === 'POST' && req.path === '/api/projects') {
 		counters.projects += 1;
 		const id = `proj-${counters.projects}`;
-		return { status: 201, body: { id, writeKey: `key-${id}`, url: `${origin}/p/${id}` } };
+		return {
+			status: 201,
+			body: { id, name: 'Quiet Teal Otter', writeKey: `key-${id}`, url: `${origin}/p/${id}` }
+		};
 	}
 	const posted = req.path.match(/^\/api\/projects\/([^/]+)\/tasks$/);
 	if (req.method === 'POST' && posted) {
@@ -229,7 +232,7 @@ describe('concurrent startTask', () => {
 				[path.join(repo, '.git')]: {
 					projectId: 'proj-1',
 					writeKey: 'key-proj-1',
-					name: path.basename(repo),
+					name: 'Quiet Teal Otter',
 					projectUrl: `${fake.url}/p/proj-1`
 				}
 			}

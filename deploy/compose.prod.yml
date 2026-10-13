@@ -28,7 +28,8 @@ services:
       ORIGIN: ${ORIGIN:?set ORIGIN in deploy/workstate.env}
       WORKSTATE_IDLE_MS: ${WORKSTATE_IDLE_MS:-}
       WORKSTATE_HEARTBEAT_MS: ${WORKSTATE_HEARTBEAT_MS:-}
-      WORKSTATE_WRITES_PER_MINUTE: ${WORKSTATE_WRITES_PER_MINUTE:-}
+      WORKSTATE_WRITES_PER_WINDOW: ${WORKSTATE_WRITES_PER_WINDOW:-}
+      WORKSTATE_WRITE_WINDOW_MS: ${WORKSTATE_WRITE_WINDOW_MS:-}
       # Set by deploy/nginx; without it every client shares the proxy's write limit.
       ADDRESS_HEADER: x-real-ip
     ports:

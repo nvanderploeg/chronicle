@@ -46,7 +46,9 @@ test.describe('light', () => {
 
 		await expect(page.locator('[data-testid="task-card"].flashing')).toBeVisible();
 
-		await expect(page.locator('[data-testid="task-badge"].state-done').first()).toBeVisible();
+		await expect(page.locator('[data-testid="task-badge"].state-done').first()).toBeVisible({
+			timeout: 40_000
+		});
 		await expect(page.locator('[data-testid="task-badge"].state-failed')).toBeVisible();
 
 		await run;
@@ -143,7 +145,9 @@ test.describe('dark', () => {
 		run.catch(() => {});
 
 		await expect(ui.cards.first()).toContainText('Add rate limiting to the API');
-		await expect(page.locator('[data-testid="task-badge"].state-done').first()).toBeVisible();
+		await expect(page.locator('[data-testid="task-badge"].state-done').first()).toBeVisible({
+			timeout: 40_000
+		});
 		await expect(page.locator('[data-testid="task-badge"].state-failed')).toBeVisible();
 
 		await run;

@@ -1,4 +1,4 @@
-export type StateKind = 'pending' | 'active' | 'blocked' | 'failed' | 'done';
+export type StateKind = 'pending' | 'active' | 'review' | 'blocked' | 'failed' | 'done';
 export type Animation = 'none' | 'pulse' | 'shimmer' | 'blink' | 'spin';
 export type Theme = 'system' | 'light' | 'dark';
 
@@ -28,9 +28,36 @@ export interface Tag {
 	color?: string;
 }
 
+export interface AgentInfo {
+	tool?: string;
+	model?: string;
+	effort?: string;
+	tokens?: number;
+}
+
+export interface Link {
+	url: string;
+	label?: string;
+}
+
+export type PrState = 'draft' | 'open' | 'merged' | 'closed';
+export type PrChecks = 'pending' | 'passing' | 'failing';
+export type PrReview = 'pending' | 'approved' | 'changes_requested';
+
+export interface PullRequest {
+	url: string;
+	number?: number;
+	title?: string;
+	state?: PrState;
+	checks?: PrChecks;
+	review?: PrReview;
+}
+
 export interface Project {
 	id: string;
 	name: string;
+	notes: string;
+	links: Link[];
 	config: ProjectConfig;
 	createdAt: string;
 	lastWriteAt: string;
@@ -43,6 +70,11 @@ export interface Task {
 	summary: string;
 	state: string;
 	note: string;
+	agent: AgentInfo | null;
+	links: Link[];
+	prs: PullRequest[];
+	repo: string | null;
+	branch: string | null;
 	createdAt: string;
 	updatedAt: string;
 	stateSince: string;
@@ -59,6 +91,8 @@ export interface Node {
 	state: string;
 	note: string;
 	tags: Tag[];
+	agent: AgentInfo | null;
+	links: Link[];
 	position: number;
 	createdAt: string;
 	updatedAt: string;
@@ -74,9 +108,9 @@ export interface Snapshot {
 
 export interface WorkstateEvent {
 	seq: number;
-	type: 'config' | 'task' | 'node';
+	type: 'config' | 'project' | 'task' | 'node';
 	taskId: string | null;
 	path: string | null;
-	payload: { config: ProjectConfig } | Task | Node;
+	payload: { config: ProjectConfig } | Project | Task | Node;
 	at: string;
 }
