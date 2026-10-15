@@ -1,0 +1,11 @@
+[Unit]
+Description=Pull and restart chronicle if a new image is published
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/chronicle
+ExecStart=/usr/bin/docker compose -p chronicle --env-file deploy/chronicle.env -f deploy/compose.prod.yml pull app
+ExecStart=/usr/bin/docker compose -p chronicle --env-file deploy/chronicle.env -f deploy/compose.prod.yml up -d
+ExecStartPost=/usr/bin/docker image prune -f --filter label=org.opencontainers.image.source=https://github.com/nvanderploeg/chronicle

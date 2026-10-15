@@ -80,7 +80,7 @@
 	const installFlags = [
 		['--with-server', 'Start a local tracker with docker compose on :3280.'],
 		['--replace', 'Back up and replace existing skills and MCP entries.'],
-		['--allow-tools', 'Allowlist the workstate MCP tools in Claude Code.']
+		['--allow-tools', 'Allowlist the chronicle MCP tools in Claude Code.']
 	];
 
 	const mockSteps = [
@@ -93,7 +93,7 @@
 </script>
 
 <svelte:head>
-	<title>workstate</title>
+	<title>chronicle</title>
 	<meta
 		name="description"
 		content="A live, view-only dashboard of what your agents are doing: projects, tasks, steps and subtasks, colored by state and pushed over SSE."
@@ -102,7 +102,7 @@
 
 <div class="ws">
 	<header class="top">
-		<span class="mark"><span class="dot"></span>workstate</span>
+		<span class="mark"><span class="dot"></span>chronicle</span>
 		<nav>
 			<a href="#install">install</a>
 			<a href="#connect">connect</a>
@@ -115,7 +115,7 @@
 			<p class="eyebrow">view-only · live · local-first</p>
 			<h1>See what your agents are doing, as it happens.</h1>
 			<p class="lede">
-				workstate is a live dashboard for agent work. Projects hold tasks, tasks hold steps, steps
+				chronicle is a live dashboard for agent work. Projects hold tasks, tasks hold steps, steps
 				hold subtasks. Every node carries a state and a color, and every change is pushed to the
 				page over server-sent events. Agents write; people watch. There is nothing to click.
 			</p>
@@ -147,11 +147,11 @@
 		<section id="install">
 			<h2><span class="n">01</span>Install</h2>
 			<pre><code
-					>git clone https://github.com/nvanderploeg/work-state
-cd work-state && scripts/install.sh</code
+					>git clone https://github.com/nvanderploeg/chronicle
+cd chronicle && scripts/install.sh</code
 				></pre>
 			<p>
-				The installer adds the <code>workstate</code> skill and MCP server to your agent setup. Pass flags
+				The installer adds the <code>chronicle</code> skill and MCP server to your agent setup. Pass flags
 				after the script:
 			</p>
 			<dl class="flags">
@@ -169,7 +169,7 @@ cd work-state && scripts/install.sh</code
 		<section id="connect">
 			<h2><span class="n">02</span>How agents connect</h2>
 			<p>
-				The <code>workstate</code> skill tells an agent when to open a task and report progress. It does
+				The <code>chronicle</code> skill tells an agent when to open a task and report progress. It does
 				that through five MCP tools:
 			</p>
 			<ul class="tools">
@@ -182,9 +182,9 @@ cd work-state && scripts/install.sh</code
 				answers:
 			</p>
 			<ol class="discovery">
-				<li><code>WORKSTATE_URL</code> <span>when set, only this server is tried</span></li>
+				<li><code>CHRONICLE_URL</code> <span>when set, only this server is tried</span></li>
 				<li><code>localhost:3280</code> <span>the local docker compose tracker</span></li>
-				<li><code>workstate.nanzero.com</code> <span>the hosted tracker</span></li>
+				<li><code>chronicle.nanzero.com</code> <span>the hosted tracker</span></li>
 			</ol>
 			<p>
 				If none responds, the agent continues untracked. A missing tracker never interrupts the

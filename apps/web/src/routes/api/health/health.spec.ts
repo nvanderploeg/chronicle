@@ -7,7 +7,7 @@ test('health reports the service and a reachable database', async () => {
 	expect(response.status).toBe(200);
 	expect(response.headers.get('cache-control')).toBe('no-store');
 	expect(await response.json()).toEqual({
-		service: 'workstate',
+		service: 'chronicle',
 		version: expect.any(String),
 		db: 'ok'
 	});

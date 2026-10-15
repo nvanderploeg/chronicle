@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
-import type { WorkstateClient } from '@workstate/client';
+import type { ChronicleClient } from '@chronicle/client';
 import { createServer, type WatchOptions } from './server.ts';
 
 type Method =
@@ -94,7 +94,7 @@ function fakeClient(): FakeClient {
 		configure: vi.fn(async () => okResult({ config: CONFIG, projectUrl: `${SERVER}/p/proj1` })),
 		projectUrl: vi.fn(async () => okResult({ url: `${SERVER}/p/proj1` })),
 		doctor: vi.fn(async () => ({
-			configDir: '/home/test/.config/workstate',
+			configDir: '/home/test/.config/chronicle',
 			pinned: null,
 			probes: [{ server: SERVER, ok: true, version: '1.0.0' }],
 			server: SERVER,
@@ -117,7 +117,7 @@ async function connect(
 	clientName = 'test-agent',
 	watch: WatchOptions = { intervalMs: 0 }
 ) {
-	const server = createServer(client as unknown as WorkstateClient, watch);
+	const server = createServer(client as unknown as ChronicleClient, watch);
 	const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 	const mcp = new Client({ name: clientName, version: '0.0.0' });
 	await server.connect(serverTransport);
@@ -145,15 +145,15 @@ async function callOutcome(
 	}
 }
 
-describe('workstate MCP server', () => {
-	it('identifies itself as the workstate server', async () => {
+describe('chronicle MCP server', () => {
+	it('identifies itself as the chronicle server', async () => {
 		const { mcp } = await connect();
 
-		expect(mcp.getServerVersion()?.name).toBe('workstate');
+		expect(mcp.getServerVersion()?.name).toBe('chronicle');
 	});
 
 	describe('tool listing', () => {
-		it('lists exactly the seven workstate tools', async () => {
+		it('lists exactly the seven chronicle tools', async () => {
 			const { mcp } = await connect();
 
 			const { tools } = await mcp.listTools();
@@ -474,9 +474,9 @@ describe('workstate MCP server', () => {
 		];
 
 		it.each(notOkCases)(
-			'%s returns a single "workstate: <warning>" text item without isError when the client is not ok',
+			'%s returns a single "chronicle: <warning>" text item without isError when the client is not ok',
 			async (name, method, args) => {
-				const warning = 'workstate rejected the update: no such task';
+				const warning = 'chronicle rejected the update: no such task';
 				const client = fakeClient();
 				client[method].mockResolvedValueOnce(notOkResult(warning));
 				const { mcp } = await connect(client);
@@ -484,12 +484,12 @@ describe('workstate MCP server', () => {
 				const response = await mcp.callTool({ name, arguments: args });
 
 				expect(response.isError).toBeFalsy();
-				expect(response.content).toEqual([{ type: 'text', text: `workstate: ${warning}` }]);
+				expect(response.content).toEqual([{ type: 'text', text: `chronicle: ${warning}` }]);
 			}
 		);
 
 		it('reports the unreachable warning verbatim for start_task', async () => {
-			const warning = 'workstate unreachable — continuing untracked';
+			const warning = 'chronicle unreachable — continuing untracked';
 			const client = fakeClient();
 			client.startTask.mockResolvedValueOnce(notOkResult(warning));
 			const { mcp } = await connect(client);
@@ -497,7 +497,7 @@ describe('workstate MCP server', () => {
 			const response = await mcp.callTool({ name: 'start_task', arguments: { title: 'T' } });
 
 			expect(response.isError).toBeFalsy();
-			expect(response.content).toEqual([{ type: 'text', text: `workstate: ${warning}` }]);
+			expect(response.content).toEqual([{ type: 'text', text: `chronicle: ${warning}` }]);
 		});
 	});
 

@@ -1,6 +1,6 @@
 import { getContext, setContext } from 'svelte';
 import { SvelteDate, SvelteMap, SvelteSet } from 'svelte/reactivity';
-import type { Node, Notice, ProjectConfig, Task, WorkstateEvent } from '../types.ts';
+import type { Node, Notice, ProjectConfig, Task, ChronicleEvent } from '../types.ts';
 import {
 	allSettled,
 	applyEvent,
@@ -18,7 +18,7 @@ export const TICK_MS = 30_000;
 
 export interface Timeline {
 	status: 'loading' | 'ready' | 'error';
-	events: WorkstateEvent[];
+	events: ChronicleEvent[];
 }
 
 export type Connection = 'connecting' | 'live' | 'retrying' | 'idle';
@@ -37,8 +37,8 @@ export function nodeKey(taskId: string, path: string): string {
 	return `${taskId}:${path}`;
 }
 
-function mergeEvents(a: WorkstateEvent[], b: WorkstateEvent[]): WorkstateEvent[] {
-	const merged: WorkstateEvent[] = [];
+function mergeEvents(a: ChronicleEvent[], b: ChronicleEvent[]): ChronicleEvent[] {
+	const merged: ChronicleEvent[] = [];
 	for (const e of [...a, ...b]) {
 		const at = merged.findIndex((m) => m.seq === e.seq);
 		if (at === -1) merged.push(e);
@@ -173,10 +173,10 @@ export class Board {
 		return () => es.close();
 	}
 
-	private onFrame(type: WorkstateEvent['type'], e: MessageEvent): void {
+	private onFrame(type: ChronicleEvent['type'], e: MessageEvent): void {
 		const seq = Number(e.lastEventId);
 		if (!Number.isFinite(seq)) return;
-		let payload: WorkstateEvent['payload'];
+		let payload: ChronicleEvent['payload'];
 		try {
 			payload = JSON.parse(e.data);
 		} catch {
@@ -203,7 +203,7 @@ export class Board {
 		this.receive({ seq, type, taskId, path, payload, at });
 	}
 
-	receive(event: WorkstateEvent): void {
+	receive(event: ChronicleEvent): void {
 		const prev = this.state;
 		const next = applyEvent(prev, event);
 		if (next === prev) return;
@@ -253,7 +253,7 @@ export class Board {
 	}
 
 	private get storageKey(): string {
-		return `workstate:${this.state.project.id}:open`;
+		return `chronicle:${this.state.project.id}:open`;
 	}
 
 	private loadOpen(): void {
@@ -277,7 +277,7 @@ export class Board {
 	}
 
 	private get noticeKey(): string {
-		return `workstate:${this.state.project.id}:notices`;
+		return `chronicle:${this.state.project.id}:notices`;
 	}
 
 	private loadNoticeStatus(): void {
@@ -324,7 +324,7 @@ export class Board {
 		try {
 			const res = await fetch(`/api/tasks/${taskId}/events?path=${encodeURIComponent(path)}`);
 			if (!res.ok) throw new Error(String(res.status));
-			const body = (await res.json()) as { events: WorkstateEvent[] };
+			const body = (await res.json()) as { events: ChronicleEvent[] };
 			const current = this.timelines.get(key);
 			this.timelines.set(key, {
 				status: 'ready',
@@ -336,7 +336,7 @@ export class Board {
 		}
 	}
 
-	private appendTimeline(event: WorkstateEvent): void {
+	private appendTimeline(event: ChronicleEvent): void {
 		if (event.taskId === null || event.path === null) return;
 		const key = nodeKey(event.taskId, event.path);
 		const current = this.timelines.get(key);

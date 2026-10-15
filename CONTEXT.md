@@ -1,4 +1,4 @@
-# workstate
+# chronicle
 
 A live dashboard for agent work: agents report multi-step tasks to a project page, people watch it update. Terms below are binding vocabulary; the contracts are `docs/api.md` (types, HTTP, stream, client files), `docs/client.md` (client, CLI, MCP) and `docs/ui.md` (dashboard helpers). Where this file and a contract disagree, the contract wins.
 
@@ -47,7 +47,7 @@ A URL with an optional label on a Project, Task or Node: the ticket, PR, board o
 A pull or merge request on a Task, with its state, checks and review decision. A Task waits in a `review`-kind State while its PRs are open; `review` never goes Stale.
 
 **PR watcher**:
-The MCP server's loop (and `workstate sync`) that refreshes open PRs through `gh` or `glab` and finishes a Task in review once all its PRs merged.
+The MCP server's loop (and `chronicle sync`) that refreshes open PRs through `gh` or `glab` and finishes a Task in review once all its PRs merged.
 
 **Moniker**:
 The three-word name (`Quiet Teal Otter`) a Project gets when created without one. Tells projects apart; not unique.
@@ -83,7 +83,7 @@ A Task not in a `done` or `failed` Kind whose newest update, across itself and i
 A Task's Registry entry (`server`, `projectId`). Later writes go to the Handle's server and never re-run Discovery.
 
 **Discovery**:
-How the client picks a server at task start: the pinned `WORKSTATE_URL` if set, else the first healthy probe of the local tracker, then the hosted one.
+How the client picks a server at task start: the pinned `CHRONICLE_URL` if set, else the first healthy probe of the local tracker, then the hosted one.
 
 **Pin**:
-Setting `WORKSTATE_URL`. Discovery then uses that server only and never falls back.
+Setting `CHRONICLE_URL`. Discovery then uses that server only and never falls back.

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const home = process.env.HOME;
-const configDir = path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'workstate');
+const configDir = path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'chronicle');
 const manifestPath = path.join(configDir, 'install.json');
 
 const [cmd, ...args] = process.argv.slice(2);
@@ -125,7 +125,7 @@ const commands = {
 	'codex-remove'([file, needle]) {
 		if (!fs.existsSync(file)) return console.log('absent');
 		const lines = fs.readFileSync(file, 'utf8').split('\n');
-		const isOurs = (l) => /^\[mcp_servers\.workstate(\..+)?\]\s*$/.test(l);
+		const isOurs = (l) => /^\[mcp_servers\.chronicle(\..+)?\]\s*$/.test(l);
 		const start = lines.findIndex(isOurs);
 		if (start === -1) return console.log('absent');
 		let end = start + 1;
@@ -145,6 +145,6 @@ try {
 	if (!commands[cmd]) throw new Error(`unknown helper command: ${cmd}`);
 	commands[cmd](args);
 } catch (err) {
-	console.error(`workstate-install: ${err.message}`);
+	console.error(`chronicle-install: ${err.message}`);
 	process.exit(1);
 }

@@ -1,6 +1,6 @@
 import { normaliseServer, request } from './http.ts';
 
-export const DEFAULT_CANDIDATES = ['http://localhost:3280', 'https://workstate.nanzero.com'];
+export const DEFAULT_CANDIDATES = ['http://localhost:3280', 'https://chronicle.nanzero.com'];
 
 function isLoopback(server: string): boolean {
 	try {
@@ -26,7 +26,7 @@ export function createDiscovery(opts: {
 	probeTimeoutMs: number;
 	remoteProbeTimeoutMs: number;
 }) {
-	const pinned = normaliseServer(opts.env.WORKSTATE_URL ?? '') || null;
+	const pinned = normaliseServer(opts.env.CHRONICLE_URL ?? '') || null;
 	const targets = pinned ? [pinned] : opts.candidates.map(normaliseServer).filter(Boolean);
 
 	async function probe(server: string): Promise<Probe> {
@@ -36,7 +36,7 @@ export function createDiscovery(opts: {
 			`${server}/api/health`,
 			{ method: 'GET' }
 		);
-		if (!reply.ok || reply.body?.service !== 'workstate') return { server, ok: false };
+		if (!reply.ok || reply.body?.service !== 'chronicle') return { server, ok: false };
 		return typeof reply.body.version === 'string'
 			? { server, ok: true, version: reply.body.version }
 			: { server, ok: true };

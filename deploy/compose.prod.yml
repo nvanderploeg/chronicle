@@ -5,10 +5,10 @@ services:
     # Sized for a small shared host; raise the buffer pool if the database outgrows it.
     command: ['--performance-schema=OFF', '--innodb-buffer-pool-size=64M']
     environment:
-      MYSQL_DATABASE: workstate
-      MYSQL_USER: workstate
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in deploy/workstate.env}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in deploy/workstate.env}
+      MYSQL_DATABASE: chronicle
+      MYSQL_USER: chronicle
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in deploy/chronicle.env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in deploy/chronicle.env}
     volumes:
       - mysqldata:/var/lib/mysql
     healthcheck:
@@ -18,18 +18,18 @@ services:
       retries: 30
 
   app:
-    image: ghcr.io/nvanderploeg/work-state:${WORKSTATE_TAG:-latest}
+    image: ghcr.io/nvanderploeg/chronicle:${CHRONICLE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: mysql://workstate:${MYSQL_PASSWORD}@db:3306/workstate
-      ORIGIN: ${ORIGIN:?set ORIGIN in deploy/workstate.env}
-      WORKSTATE_IDLE_MS: ${WORKSTATE_IDLE_MS:-}
-      WORKSTATE_HEARTBEAT_MS: ${WORKSTATE_HEARTBEAT_MS:-}
-      WORKSTATE_WRITES_PER_WINDOW: ${WORKSTATE_WRITES_PER_WINDOW:-}
-      WORKSTATE_WRITE_WINDOW_MS: ${WORKSTATE_WRITE_WINDOW_MS:-}
+      DATABASE_URL: mysql://chronicle:${MYSQL_PASSWORD}@db:3306/chronicle
+      ORIGIN: ${ORIGIN:?set ORIGIN in deploy/chronicle.env}
+      CHRONICLE_IDLE_MS: ${CHRONICLE_IDLE_MS:-}
+      CHRONICLE_HEARTBEAT_MS: ${CHRONICLE_HEARTBEAT_MS:-}
+      CHRONICLE_WRITES_PER_WINDOW: ${CHRONICLE_WRITES_PER_WINDOW:-}
+      CHRONICLE_WRITE_WINDOW_MS: ${CHRONICLE_WRITE_WINDOW_MS:-}
       # Set by deploy/nginx; without it every client shares the proxy's write limit.
       ADDRESS_HEADER: x-real-ip
     ports:

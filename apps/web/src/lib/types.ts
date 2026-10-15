@@ -118,7 +118,7 @@ export interface Snapshot {
 	lastSeq: number;
 }
 
-export interface WorkstateEvent {
+export interface ChronicleEvent {
 	seq: number;
 	type: 'config' | 'project' | 'task' | 'node' | 'notice';
 	taskId: string | null;

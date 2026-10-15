@@ -41,7 +41,7 @@ let configDir: string;
 
 function route(req: Recorded, origin: string, counters: { projects: number; tasks: number }) {
 	if (req.method === 'GET' && req.path === '/api/health') {
-		return { status: 200, body: { service: 'workstate', version: '0.1.0', db: 'ok' } };
+		return { status: 200, body: { service: 'chronicle', version: '0.1.0', db: 'ok' } };
 	}
 	if (req.method === 'POST' && req.path === '/api/projects') {
 		counters.projects += 1;
@@ -127,7 +127,7 @@ function git(cwd: string, args: string[]): void {
 
 function makeClient(url: string) {
 	return createClient({
-		env: { WORKSTATE_URL: url },
+		env: { CHRONICLE_URL: url },
 		configDir,
 		probeTimeoutMs: 1000,
 		requestTimeoutMs: 5000

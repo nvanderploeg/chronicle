@@ -11,28 +11,28 @@ import {
 	type StepInput,
 	type Tag,
 	type Theme,
-	type WorkstateClient
-} from '@workstate/client';
+	type ChronicleClient
+} from '@chronicle/client';
 
 export interface RunIo {
 	stdout: (s: string) => void;
 	stderr: (s: string) => void;
-	client?: WorkstateClient;
+	client?: ChronicleClient;
 }
 
 const USAGE = `usage:
-  workstate start <title> [--summary s] [--state k] [--note n] [--step key[/sub]=Title]... [--project name]
+  chronicle start <title> [--summary s] [--state k] [--note n] [--step key[/sub]=Title]... [--project name]
                   [--repo owner/name] [--branch b] [agent] [--link url[|label]]... [--pr url]... [--cwd dir]
-  workstate step <taskId> <path> [state] [--title t] [--note n] [--tag text[|color]]... [--position n]
+  chronicle step <taskId> <path> [state] [--title t] [--note n] [--tag text[|color]]... [--position n]
                   [agent] [--link url[|label]]...
-  workstate task <taskId> [state] [--title t] [--summary s] [--note n] [agent] [--link url[|label]]... [--pr url]...
-  workstate notice <taskId> <assumption|caveat> <text> [--path p]
-  workstate sync [--task id]...
-  workstate project [--name n] [--notes s] [--link url[|label]]... [--task id] [--cwd dir]
-  workstate get <taskId>
-  workstate config [--file path.json] [--theme t] [--color state=color]... [--initial state] [--task id] [--cwd dir]
-  workstate url [taskId] [--cwd dir]
-  workstate doctor [--cwd dir]
+  chronicle task <taskId> [state] [--title t] [--summary s] [--note n] [agent] [--link url[|label]]... [--pr url]...
+  chronicle notice <taskId> <assumption|caveat> <text> [--path p]
+  chronicle sync [--task id]...
+  chronicle project [--name n] [--notes s] [--link url[|label]]... [--task id] [--cwd dir]
+  chronicle get <taskId>
+  chronicle config [--file path.json] [--theme t] [--color state=color]... [--initial state] [--task id] [--cwd dir]
+  chronicle url [taskId] [--cwd dir]
+  chronicle doctor [--cwd dir]
 
   agent: [--tool claude-code|codex] [--model id] [--effort level] [--tokens n]`;
 
@@ -154,7 +154,7 @@ export async function run(argv: string[], io: RunIo): Promise<number> {
 
 	const finish = <T>(result: Result<T>, print: (value: T) => string): number => {
 		if (!result.ok) {
-			io.stderr(`workstate: ${result.warning}`);
+			io.stderr(`chronicle: ${result.warning}`);
 			return 0;
 		}
 		io.stdout(print(result.value));
@@ -316,7 +316,7 @@ export async function run(argv: string[], io: RunIo): Promise<number> {
 						config = JSON.parse(await readFile(values.file, 'utf8')) as ProjectConfig;
 					} catch (error) {
 						const message = error instanceof Error ? error.message : String(error);
-						io.stderr(`workstate: cannot read config ${values.file}: ${message}`);
+						io.stderr(`chronicle: cannot read config ${values.file}: ${message}`);
 						return 2;
 					}
 				}
@@ -354,10 +354,10 @@ export async function run(argv: string[], io: RunIo): Promise<number> {
 		}
 	} catch (error) {
 		if (error instanceof UsageError) {
-			io.stderr(`workstate: ${error.message}\n${USAGE}`);
+			io.stderr(`chronicle: ${error.message}\n${USAGE}`);
 			return 2;
 		}
-		io.stderr(`workstate: ${error instanceof Error ? error.message : String(error)}`);
+		io.stderr(`chronicle: ${error instanceof Error ? error.message : String(error)}`);
 		return 0;
 	}
 }

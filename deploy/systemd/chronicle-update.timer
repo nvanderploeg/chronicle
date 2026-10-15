@@ -1,5 +1,5 @@
 [Unit]
-Description=Check for new workstate images every 10 minutes
+Description=Check for new chronicle images every 10 minutes
 
 [Timer]
 OnBootSec=5min

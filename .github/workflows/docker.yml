@@ -20,15 +20,15 @@ jobs:
     permissions:
       contents: read
     env:
-      DATABASE_URL: mysql://workstate:workstate@127.0.0.1:3316/workstate_test
+      DATABASE_URL: mysql://chronicle:chronicle@127.0.0.1:3316/chronicle_test
     services:
       mysql:
         image: mysql:8.4
         env:
           MYSQL_ROOT_PASSWORD: rootpassword
-          MYSQL_DATABASE: workstate_test
-          MYSQL_USER: workstate
-          MYSQL_PASSWORD: workstate
+          MYSQL_DATABASE: chronicle_test
+          MYSQL_USER: chronicle
+          MYSQL_PASSWORD: chronicle
         ports:
           - 3316:3306
         options: >-

@@ -1,4 +1,4 @@
-# workstate dashboard helpers contract
+# chronicle dashboard helpers contract
 
 Pure functions in `apps/web/src/lib/ui/dashboard.ts`, used by the dashboard components. Types are from `apps/web/src/lib/types.ts` (as in `docs/api.md`). No DOM, no timers, no I/O.
 
@@ -14,7 +14,7 @@ export interface DashboardState {
 export const FALLBACK_COLOR = '#9ca3af';
 export const STALE_MS = 4 * 60 * 60 * 1000;
 
-export function applyEvent(state: DashboardState, event: WorkstateEvent): DashboardState;
+export function applyEvent(state: DashboardState, event: ChronicleEvent): DashboardState;
 export function stateOf(config: ProjectConfig, key: string): StateDef;
 export function kindOf(config: ProjectConfig, key: string): StateKind;
 export function taskBucket(task: Task, config: ProjectConfig): 'badge' | 'card';

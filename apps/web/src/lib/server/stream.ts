@@ -1,7 +1,7 @@
-import { WORKSTATE_HEARTBEAT_MS, WORKSTATE_IDLE_MS } from '$app/env/private';
+import { CHRONICLE_HEARTBEAT_MS, CHRONICLE_IDLE_MS } from '$app/env/private';
 import { subscribe } from '#lib/server/bus.ts';
 import { eventsSince, getProjectRow, lastWriteAt } from '#lib/server/store.ts';
-import type { WorkstateEvent } from '#lib/types.ts';
+import type { ChronicleEvent } from '#lib/types.ts';
 
 export interface StreamOptions {
 	since?: number;
@@ -13,7 +13,7 @@ export interface StreamOptions {
 
 const encoder = new TextEncoder();
 
-function frame(event: WorkstateEvent): string {
+function frame(event: ChronicleEvent): string {
 	return `id: ${event.seq}\nevent: ${event.type}\ndata: ${JSON.stringify(event.payload)}\n\n`;
 }
 
@@ -22,8 +22,8 @@ export async function createProjectStream(
 	options: StreamOptions = {}
 ): Promise<ReadableStream<Uint8Array> | null> {
 	const now = options.now ?? Date.now;
-	const idleMs = options.idleMs ?? WORKSTATE_IDLE_MS;
-	const heartbeatMs = options.heartbeatMs ?? WORKSTATE_HEARTBEAT_MS;
+	const idleMs = options.idleMs ?? CHRONICLE_IDLE_MS;
+	const heartbeatMs = options.heartbeatMs ?? CHRONICLE_HEARTBEAT_MS;
 	const { since } = options;
 
 	if (!(await getProjectRow(projectId))) return null;
@@ -36,7 +36,7 @@ export async function createProjectStream(
 	let closed = false;
 	let replaying = since !== undefined;
 	let lastSeq = since ?? -1;
-	const buffered: WorkstateEvent[] = [];
+	const buffered: ChronicleEvent[] = [];
 	let unsubscribe: (() => void) | undefined;
 	let idleTimer: ReturnType<typeof setTimeout> | undefined;
 	let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
@@ -76,13 +76,13 @@ export async function createProjectStream(
 		);
 	}
 
-	function emit(event: WorkstateEvent): void {
+	function emit(event: ChronicleEvent): void {
 		if (event.seq <= lastSeq) return;
 		lastSeq = event.seq;
 		send(frame(event));
 	}
 
-	function onLive(event: WorkstateEvent): void {
+	function onLive(event: ChronicleEvent): void {
 		if (closed) return;
 		deadline = now() + idleMs;
 		armIdle();

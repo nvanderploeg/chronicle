@@ -127,7 +127,7 @@ async function closeFake(fake: Fake): Promise<void> {
 
 const healthy = (version = '0.1.0'): Reply => ({
 	status: 200,
-	body: { service: 'workstate', version, db: 'ok' }
+	body: { service: 'chronicle', version, db: 'ok' }
 });
 
 function answering(handler: Handler): Handler {
@@ -236,20 +236,20 @@ afterEach(async () => {
 
 describe('exported constants', () => {
 	it('lists the default candidates in probe order', () => {
-		expect(DEFAULT_CANDIDATES).toEqual(['http://localhost:3280', 'https://workstate.nanzero.com']);
+		expect(DEFAULT_CANDIDATES).toEqual(['http://localhost:3280', 'https://chronicle.nanzero.com']);
 	});
 
 	it('uses the exact unreachable warning text', () => {
-		expect(UNREACHABLE_WARNING).toBe('workstate unreachable — continuing untracked');
+		expect(UNREACHABLE_WARNING).toBe('chronicle unreachable — continuing untracked');
 	});
 });
 
 describe('discover', () => {
-	it('returns WORKSTATE_URL when it is healthy, trimmed, without probing candidates', async () => {
+	it('returns CHRONICLE_URL when it is healthy, trimmed, without probing candidates', async () => {
 		const pinned = await startFake(() => healthy());
 		const candidate = await startFake(() => healthy());
 		const client = makeClient({
-			env: { WORKSTATE_URL: `  ${pinned.url}/  ` },
+			env: { CHRONICLE_URL: `  ${pinned.url}/  ` },
 			candidates: [candidate.url]
 		});
 
@@ -258,29 +258,29 @@ describe('discover', () => {
 		expect(candidate.requests).toHaveLength(0);
 	});
 
-	it('returns null for an unhealthy WORKSTATE_URL and never tries the candidates', async () => {
+	it('returns null for an unhealthy CHRONICLE_URL and never tries the candidates', async () => {
 		const candidate = await startFake(() => healthy());
-		const client = makeClient({ env: { WORKSTATE_URL: DEAD }, candidates: [candidate.url] });
+		const client = makeClient({ env: { CHRONICLE_URL: DEAD }, candidates: [candidate.url] });
 
 		expect(await client.discover()).toBeNull();
 		expect(candidate.requests).toHaveLength(0);
 	});
 
-	it('returns null for a WORKSTATE_URL that answers 503 and never tries the candidates', async () => {
+	it('returns null for a CHRONICLE_URL that answers 503 and never tries the candidates', async () => {
 		const pinned = await startFake(() => ({
 			status: 503,
-			body: { service: 'workstate', version: '0.1.0', db: 'unavailable' }
+			body: { service: 'chronicle', version: '0.1.0', db: 'unavailable' }
 		}));
 		const candidate = await startFake(() => healthy());
-		const client = makeClient({ env: { WORKSTATE_URL: pinned.url }, candidates: [candidate.url] });
+		const client = makeClient({ env: { CHRONICLE_URL: pinned.url }, candidates: [candidate.url] });
 
 		expect(await client.discover()).toBeNull();
 		expect(candidate.requests).toHaveLength(0);
 	});
 
-	it('treats an empty WORKSTATE_URL as unset and falls back to the candidates', async () => {
+	it('treats an empty CHRONICLE_URL as unset and falls back to the candidates', async () => {
 		const candidate = await startFake(() => healthy());
-		const client = makeClient({ env: { WORKSTATE_URL: '' }, candidates: [candidate.url] });
+		const client = makeClient({ env: { CHRONICLE_URL: '' }, candidates: [candidate.url] });
 
 		expect(await client.discover()).toBe(candidate.url);
 	});
@@ -300,7 +300,7 @@ describe('discover', () => {
 		expect(await client.discover()).toBe(second.url);
 	});
 
-	it('does not treat a health answer naming another service as workstate', async () => {
+	it('does not treat a health answer naming another service as chronicle', async () => {
 		const other = await startFake(() => ({
 			status: 200,
 			body: { service: 'something-else', db: 'ok' }
@@ -310,17 +310,17 @@ describe('discover', () => {
 		expect(await client.discover()).toBeNull();
 	});
 
-	it('does not treat a non-2xx workstate health answer as healthy', async () => {
+	it('does not treat a non-2xx chronicle health answer as healthy', async () => {
 		const sick = await startFake(() => ({
 			status: 503,
-			body: { service: 'workstate', version: '0.1.0', db: 'unavailable' }
+			body: { service: 'chronicle', version: '0.1.0', db: 'unavailable' }
 		}));
 		const client = makeClient({ env: {}, candidates: [sick.url] });
 
 		expect(await client.discover()).toBeNull();
 	});
 
-	it('does not treat a non-JSON health body as workstate', async () => {
+	it('does not treat a non-JSON health body as chronicle', async () => {
 		const plain = await startFake(() => ({ status: 200, text: 'ok' }));
 		const client = makeClient({ env: {}, candidates: [plain.url] });
 
@@ -338,7 +338,7 @@ describe('discover', () => {
 		const slowHealth = (url: string, init?: { signal?: AbortSignal }) =>
 			new Promise<Response>((resolve, reject) => {
 				const timer = setTimeout(
-					() => resolve(Response.json({ service: 'workstate', version: '0.1.0', db: 'ok' })),
+					() => resolve(Response.json({ service: 'chronicle', version: '0.1.0', db: 'ok' })),
 					150
 				);
 				init?.signal?.addEventListener('abort', () => {
@@ -357,8 +357,8 @@ describe('discover', () => {
 			null
 		);
 		expect(
-			await makeClient({ ...options, candidates: ['https://workstate.example.com'] }).discover()
-		).toBe('https://workstate.example.com');
+			await makeClient({ ...options, candidates: ['https://chronicle.example.com'] }).discover()
+		).toBe('https://chronicle.example.com');
 	});
 
 	it('returns null when every candidate is down', async () => {
@@ -378,7 +378,7 @@ describe('discover', () => {
 	it('probes through an injected fetch', async () => {
 		const fetchMock = vi.fn(
 			async () =>
-				new Response(JSON.stringify({ service: 'workstate', version: '0.1.0', db: 'ok' }), {
+				new Response(JSON.stringify({ service: 'chronicle', version: '0.1.0', db: 'ok' }), {
 					status: 200,
 					headers: { 'content-type': 'application/json' }
 				})
@@ -611,14 +611,14 @@ describe('startTask', () => {
 
 		expect(await client.startTask({ title: '', cwd: workDir() })).toEqual({
 			ok: false,
-			warning: 'workstate rejected the update: title is required'
+			warning: 'chronicle rejected the update: title is required'
 		});
 	});
 
-	it('posts to WORKSTATE_URL alone when it is set', async () => {
+	it('posts to CHRONICLE_URL alone when it is set', async () => {
 		const pinned = await startFake(serveTasks());
 		const other = await startFake(serveTasks());
-		const client = makeClient({ env: { WORKSTATE_URL: pinned.url }, candidates: [other.url] });
+		const client = makeClient({ env: { CHRONICLE_URL: pinned.url }, candidates: [other.url] });
 
 		const result = await client.startTask({ title: 'x', cwd: workDir() });
 
@@ -637,7 +637,7 @@ describe('startTask', () => {
 
 			expect(result).toEqual({
 				ok: false,
-				warning: `workstate failed: ${path.join(configDir, name)} is not a JSON object; fix or delete it`
+				warning: `chronicle failed: ${path.join(configDir, name)} is not a JSON object; fix or delete it`
 			});
 			expect(fs.readFileSync(path.join(configDir, name), 'utf8')).toBe('{"almost": "json",}');
 			expect(fake.requests.filter((r) => r.method === 'POST')).toHaveLength(0);
@@ -645,7 +645,7 @@ describe('startTask', () => {
 	);
 
 	it('links to the public origin the server answers with, not the address it was reached on', async () => {
-		const PUBLIC = 'https://workstate.example.com';
+		const PUBLIC = 'https://chronicle.example.com';
 		const fake = await startFake((req) => {
 			if (req.method === 'GET' && req.path === '/api/health') return healthy();
 			if (req.method === 'POST' && req.path === '/api/projects') {
@@ -687,7 +687,7 @@ describe('startTask', () => {
 
 	it('creates a missing configDir with mode 0700', async () => {
 		const fake = await startFake(serveTasks());
-		configDir = path.join(configDir, 'nested', 'workstate');
+		configDir = path.join(configDir, 'nested', 'chronicle');
 		const client = makeClient({ candidates: [fake.url] });
 
 		const result = await client.startTask({ title: 'x', cwd: workDir() });
@@ -826,7 +826,7 @@ describe('updateStep', () => {
 		const handleServer = await startFake(() => ({ status: 200, body: { node: NODE } }));
 		const pinned = await startFake(() => healthy());
 		seedHandle(handleServer.url);
-		const client = makeClient({ env: { WORKSTATE_URL: pinned.url }, candidates: [pinned.url] });
+		const client = makeClient({ env: { CHRONICLE_URL: pinned.url }, candidates: [pinned.url] });
 
 		const result = await client.updateStep({ taskId: 'task-1', path: 'a' });
 
@@ -838,7 +838,7 @@ describe('updateStep', () => {
 	it('returns the unknown-task warning without contacting any server', async () => {
 		const fake = await startFake(() => ({ status: 200, body: { node: NODE } }));
 		seedFile('projects.json', {});
-		const client = makeClient({ env: { WORKSTATE_URL: fake.url }, candidates: [fake.url] });
+		const client = makeClient({ env: { CHRONICLE_URL: fake.url }, candidates: [fake.url] });
 
 		expect(await client.updateStep({ taskId: 'task-404', path: 'a' })).toEqual({
 			ok: false,
@@ -853,7 +853,7 @@ describe('updateStep', () => {
 
 		expect(await client.updateStep({ taskId: 'task-1', path: 'a' })).toEqual({
 			ok: false,
-			warning: `workstate failed: ${path.join(configDir, 'tasks.json')} is not a JSON object; fix or delete it`
+			warning: `chronicle failed: ${path.join(configDir, 'tasks.json')} is not a JSON object; fix or delete it`
 		});
 	});
 
@@ -886,7 +886,7 @@ describe('updateStep', () => {
 
 		expect(await client.updateStep({ taskId: 'task-1', path: 'a' })).toEqual({
 			ok: false,
-			warning: 'workstate rejected the update: too many writes'
+			warning: 'chronicle rejected the update: too many writes'
 		});
 		expect(fake.requests).toHaveLength(1);
 	});
@@ -901,7 +901,7 @@ describe('updateStep', () => {
 
 		expect(await client.updateStep({ taskId: 'task-1', path: 'a', state: 'nope' })).toEqual({
 			ok: false,
-			warning: 'workstate rejected the update: unknown state (valid states: queued, done)'
+			warning: 'chronicle rejected the update: unknown state (valid states: queued, done)'
 		});
 	});
 
@@ -912,7 +912,7 @@ describe('updateStep', () => {
 
 		expect(await client.updateStep({ taskId: 'task-1', path: 'a' })).toEqual({
 			ok: false,
-			warning: 'workstate rejected the update: invalid path'
+			warning: 'chronicle rejected the update: invalid path'
 		});
 	});
 
@@ -923,7 +923,7 @@ describe('updateStep', () => {
 
 		expect(await client.updateStep({ taskId: 'task-1', path: 'a' })).toEqual({
 			ok: false,
-			warning: 'workstate rejected the update: invalid write key'
+			warning: 'chronicle rejected the update: invalid write key'
 		});
 	});
 
@@ -997,7 +997,7 @@ describe('updateTask', () => {
 
 	it('returns the unknown-task warning for an unknown task', async () => {
 		const fake = await startFake(() => ({ status: 200, body: { task: TASK } }));
-		const client = makeClient({ env: { WORKSTATE_URL: fake.url }, candidates: [fake.url] });
+		const client = makeClient({ env: { CHRONICLE_URL: fake.url }, candidates: [fake.url] });
 
 		expect(await client.updateTask({ taskId: 'task-404', state: 'done' })).toEqual({
 			ok: false,
@@ -1016,7 +1016,7 @@ describe('updateTask', () => {
 
 		expect(await client.updateTask({ taskId: 'task-1', state: 'nope' })).toEqual({
 			ok: false,
-			warning: 'workstate rejected the update: unknown state (valid states: queued, done)'
+			warning: 'chronicle rejected the update: unknown state (valid states: queued, done)'
 		});
 	});
 
@@ -1064,7 +1064,7 @@ describe('getTask', () => {
 		const handleServer = await startFake(() => ({ status: 200, body: { task: TASK, nodes: [] } }));
 		const pinned = await startFake(() => healthy());
 		seedHandle(handleServer.url);
-		const client = makeClient({ env: { WORKSTATE_URL: pinned.url }, candidates: [pinned.url] });
+		const client = makeClient({ env: { CHRONICLE_URL: pinned.url }, candidates: [pinned.url] });
 
 		const result = await client.getTask({ taskId: 'task-1' });
 
@@ -1078,7 +1078,7 @@ describe('getTask', () => {
 
 	it('returns the unknown-task warning for an unknown task', async () => {
 		const fake = await startFake(() => ({ status: 200, body: { task: TASK, nodes: [] } }));
-		const client = makeClient({ env: { WORKSTATE_URL: fake.url }, candidates: [fake.url] });
+		const client = makeClient({ env: { CHRONICLE_URL: fake.url }, candidates: [fake.url] });
 
 		expect(await client.getTask({ taskId: 'task-404' })).toEqual({
 			ok: false,
@@ -1094,7 +1094,7 @@ describe('getTask', () => {
 
 		expect(await client.getTask({ taskId: 'task-1' })).toEqual({
 			ok: false,
-			warning: 'workstate rejected the update: task not found'
+			warning: 'chronicle rejected the update: task not found'
 		});
 	});
 
@@ -1246,7 +1246,7 @@ describe('configure and projectUrl', () => {
 			)
 		);
 		seedHandle(fake.url);
-		const client = makeClient({ env: { WORKSTATE_URL: DEAD }, candidates: [DEAD] });
+		const client = makeClient({ env: { CHRONICLE_URL: DEAD }, candidates: [DEAD] });
 
 		const result = await client.configure({ taskId: 'task-1', patch: { initialState: 'queued' } });
 
@@ -1263,7 +1263,7 @@ describe('configure and projectUrl', () => {
 
 		expect(await client.configure({ cwd, patch: { theme: 'dark' } })).toEqual({
 			ok: false,
-			warning: 'no workstate project for this repo yet — start a task first'
+			warning: 'no chronicle project for this repo yet — start a task first'
 		});
 	});
 
@@ -1274,7 +1274,7 @@ describe('configure and projectUrl', () => {
 
 		expect(await client.projectUrl({ cwd: workDir() })).toEqual({
 			ok: false,
-			warning: `workstate failed: ${path.join(configDir, 'projects.json')} is not a JSON object; fix or delete it`
+			warning: `chronicle failed: ${path.join(configDir, 'projects.json')} is not a JSON object; fix or delete it`
 		});
 	});
 
@@ -1306,7 +1306,7 @@ describe('doctor', () => {
 	it('reports the pinned server, its probe, and the registry entry for this repo', async () => {
 		const fake = await startFake(serveTasks());
 		const cwd = workDir();
-		const client = makeClient({ env: { WORKSTATE_URL: `${fake.url}/` }, candidates: [DEAD] });
+		const client = makeClient({ env: { CHRONICLE_URL: `${fake.url}/` }, candidates: [DEAD] });
 		await client.startTask({ title: 'x', cwd });
 
 		const report = await client.doctor({ cwd });
@@ -1526,13 +1526,13 @@ describe('project names, refs and agent info', () => {
 		const fake = await startFake(serveTasks());
 		const cwd = workDir();
 		git(cwd, ['init', '-q', '-b', 'feat/cards']);
-		git(cwd, ['remote', 'add', 'origin', 'git@github.com:me/work-state.git']);
+		git(cwd, ['remote', 'add', 'origin', 'git@github.com:me/chronicle.git']);
 		const client = makeClient({ candidates: [fake.url] });
 
 		await client.startTask({ title: 't', cwd });
 
 		const post = fake.requests.find((r) => r.path === '/api/projects/proj-1/tasks');
-		expect(post?.body).toMatchObject({ repo: 'me/work-state', branch: 'feat/cards' });
+		expect(post?.body).toMatchObject({ repo: 'me/chronicle', branch: 'feat/cards' });
 	});
 
 	it('lets explicit repo and branch win over git', async () => {
@@ -1598,8 +1598,8 @@ describe('project names, refs and agent info', () => {
 
 describe('repoFromRemote', () => {
 	it.each([
-		['git@github.com:me/work-state.git', 'me/work-state'],
-		['https://github.com/me/work-state', 'me/work-state'],
+		['git@github.com:me/chronicle.git', 'me/chronicle'],
+		['https://github.com/me/chronicle', 'me/chronicle'],
 		['https://gitlab.com/group/sub/proj.git', 'sub/proj'],
 		['ssh://git@host:2222/me/repo.git/', 'me/repo']
 	])('reads %s as %s', (remote, repo) => {

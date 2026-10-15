@@ -1,4 +1,4 @@
-# workstate API contract
+# chronicle API contract
 
 Every package builds against this file. When behaviour and this file disagree, this file wins until it is changed.
 
@@ -129,7 +129,7 @@ interface Snapshot {
 	lastSeq: number; // highest event seq for this project, 0 if none
 }
 
-interface WorkstateEvent {
+interface ChronicleEvent {
 	seq: number;
 	type: 'config' | 'project' | 'task' | 'node' | 'notice';
 	taskId: string | null;
@@ -162,7 +162,7 @@ Writes (🔑) need `Authorization: Bearer <writeKey>` of the project that owns t
 
 | Method | Path                                | Body                                             | Success                                               |
 | ------ | ----------------------------------- | ------------------------------------------------ | ----------------------------------------------------- |
-| GET    | `/api/health`                       | —                                                | 200 `{ service: 'workstate', version, db: 'ok' }`; 503 `{ service, version, db: 'unavailable' }` |
+| GET    | `/api/health`                       | —                                                | 200 `{ service: 'chronicle', version, db: 'ok' }`; 503 `{ service, version, db: 'unavailable' }` |
 | GET    | `/api/presets`                      | —                                                | 200 `{ presets: { name, config }[] }`                 |
 | POST   | `/api/projects`                     | `{ name?, notes?, links?, preset?, config? }`    | 201 `{ id, name, writeKey, url, config }`             |
 | GET    | `/api/projects/:id`                 | —                                                | 200 `Snapshot`                                        |
@@ -171,7 +171,7 @@ Writes (🔑) need `Authorization: Bearer <writeKey>` of the project that owns t
 | PATCH 🔑 | `/api/projects/:id/config`         | `ConfigPatch`                                    | 200 `{ config }`                                      |
 | POST 🔑 | `/api/projects/:id/tasks`           | `{ title, summary?, state?, note?, agent?, links?, prs?, repo?, branch?, steps? }` | 201 `{ taskId, url, task, nodes }` |
 | GET    | `/api/tasks/:taskId`                | —                                                | 200 `{ task, nodes, notices }`                        |
-| GET    | `/api/tasks/:taskId/events`         | query `path?`                                    | 200 `{ events: WorkstateEvent[] }` (seq asc; `path` filters to that node; `notice` events are left out) |
+| GET    | `/api/tasks/:taskId/events`         | query `path?`                                    | 200 `{ events: ChronicleEvent[] }` (seq asc; `path` filters to that node; `notice` events are left out) |
 | PATCH 🔑 | `/api/tasks/:taskId`               | `{ title?, summary?, state?, note?, agent?, links?, prs?, repo?, branch? }` | 200 `{ task }`  |
 | PUT 🔑  | `/api/tasks/:taskId/nodes/<path…>`  | `{ title?, state?, note?, tags?, agent?, links?, position? }` | 200 `{ node }`               |
 | POST 🔑 | `/api/tasks/:taskId/notices`        | `{ kind, text, path? }`                          | 201 `{ notice }`                                      |
@@ -180,7 +180,7 @@ Writes (🔑) need `Authorization: Bearer <writeKey>` of the project that owns t
 - `POST /api/projects`: `name` defaults to a random three-word moniker (`Quiet Teal Otter`), returned in the body; `preset` defaults to `'build-it'`; `config`, when given, is used instead of the preset. Unknown preset or invalid config → 400. `url` = `<origin>/p/<id>`.
 - `steps` on task create: `{ key, title?, state?, note?, tags?, agent?, links?, subtasks? }[]`, created as depth-1 nodes in array order; `subtasks` has the same shape and nests to any depth, each level in array order. Keys must be unique among siblings. `url` = `<origin>/p/<projectId>/t/<taskId>`.
 - `PATCH /api/projects/:id` emits a `project` event carrying the whole `Project`.
-- Every `POST`, `PUT` and `PATCH` under `/api` draws from a token bucket per client address: `WORKSTATE_WRITES_PER_WINDOW` (default 120) at once, refilled at that many per `WORKSTATE_WRITE_WINDOW_MS` (default 300 000); `0` disables it. An empty bucket → 429 `{ error: 'too many writes from this address; retry later' }` with `Retry-After: <whole seconds>`, before the body or key is checked.
+- Every `POST`, `PUT` and `PATCH` under `/api` draws from a token bucket per client address: `CHRONICLE_WRITES_PER_WINDOW` (default 120) at once, refilled at that many per `CHRONICLE_WRITE_WINDOW_MS` (default 300 000); `0` disables it. An empty bucket → 429 `{ error: 'too many writes from this address; retry later' }` with `Retry-After: <whole seconds>`, before the body or key is checked.
 - 401 `{ error: 'missing write key' }` with no bearer token; 403 `{ error: 'invalid write key' }` on mismatch; 404 `{ error: 'project not found' | 'task not found' }`; 400 for malformed ids, paths, or bodies.
 
 ## Stream
@@ -188,10 +188,10 @@ Writes (🔑) need `Authorization: Bearer <writeKey>` of the project that owns t
 `GET /api/projects/:id/stream` (404 JSON for an unknown project). Headers: `content-type: text/event-stream`, `cache-control: no-cache`, `x-accel-buffering: no`.
 
 - Replay: with `Last-Event-ID: N` or `?since=N`, first send every project event with `seq > N` in order, then live events. Without either, live only.
-- Event frame: `id: <seq>\nevent: <type>\ndata: <JSON payload>\n\n` — `payload` as in `WorkstateEvent`.
+- Event frame: `id: <seq>\nevent: <type>\ndata: <JSON payload>\n\n` — `payload` as in `ChronicleEvent`.
 - Opening: `: ok\n\n` as soon as the stream opens, before any replay.
-- Heartbeat: `: ping\n\n` every `WORKSTATE_HEARTBEAT_MS` (default 25 000).
-- Idle: deadline = max(project `lastWriteAt`, stream open time) + `WORKSTATE_IDLE_MS` (default 14 400 000); each published write resets it. At the deadline send `event: idle\ndata: {}\n\n` and close the stream.
+- Heartbeat: `: ping\n\n` every `CHRONICLE_HEARTBEAT_MS` (default 25 000).
+- Idle: deadline = max(project `lastWriteAt`, stream open time) + `CHRONICLE_IDLE_MS` (default 14 400 000); each published write resets it. At the deadline send `event: idle\ndata: {}\n\n` and close the stream.
 
 ## Presets
 
@@ -210,12 +210,12 @@ Writes (🔑) need `Authorization: Bearer <writeKey>` of the project that owns t
 
 ## Client files
 
-Under `$XDG_CONFIG_HOME/workstate` (default `~/.config/workstate`), written atomically with mode 0600:
+Under `$XDG_CONFIG_HOME/chronicle` (default `~/.config/chronicle`), written atomically with mode 0600:
 
 - `projects.json` — `{ [server]: { [repoKey]: { projectId, writeKey, name, projectUrl? } } }`. `projectUrl` is the `url` the server returned at creation. `repoKey` = absolute `git rev-parse --path-format=absolute --git-common-dir` of the cwd, or the cwd's realpath outside git. `name` = the project name the server returned or a later rename set.
 - `tasks.json` — `{ [taskId]: { server, projectId, projectUrl? } }`. `projectUrl` is the task `url` minus `/t/<taskId>`.
 
-Discovery: `WORKSTATE_URL` set → only that server, never another. Otherwise probe `http://localhost:3280` then `https://workstate.nanzero.com` with `GET /api/health` (300 ms timeout for a loopback host, 2 s for any other; needs 2xx and `service === 'workstate'`), at every task start. Updates go to the server in the task's handle.
+Discovery: `CHRONICLE_URL` set → only that server, never another. Otherwise probe `http://localhost:3280` then `https://chronicle.nanzero.com` with `GET /api/health` (300 ms timeout for a loopback host, 2 s for any other; needs 2xx and `service === 'chronicle'`), at every task start. Updates go to the server in the task's handle.
 
 `startTask` sends `repo` (`owner/name` from the `origin` remote) and `branch` (`git symbolic-ref --short HEAD`) of the cwd unless given, and `agent.tool = 'claude-code'` when `CLAUDECODE=1` and no tool was given. It sends `name` on project creation only when the caller passed `project`; a later `project` that differs from the registry entry renames the project once.
 

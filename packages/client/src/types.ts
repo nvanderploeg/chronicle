@@ -144,7 +144,7 @@ export interface DoctorReport {
 	registryError: string | null;
 }
 
-export interface WorkstateClient {
+export interface ChronicleClient {
 	discover(): Promise<string | null>;
 	startTask(input: {
 		title: string;

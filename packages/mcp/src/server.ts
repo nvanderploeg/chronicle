@@ -5,8 +5,8 @@ import {
 	type AgentInfo,
 	type Result,
 	type StepInput,
-	type WorkstateClient
-} from '@workstate/client';
+	type ChronicleClient
+} from '@chronicle/client';
 import { z } from 'zod';
 
 const tag = z.object({ text: z.string().min(1), color: z.string().optional() });
@@ -87,7 +87,7 @@ function toolFromClient(name: string | undefined): string | undefined {
 }
 
 function respond<T>(result: Result<T>): CallToolResult {
-	const text = result.ok ? JSON.stringify(result.value) : `workstate: ${result.warning}`;
+	const text = result.ok ? JSON.stringify(result.value) : `chronicle: ${result.warning}`;
 	return { content: [{ type: 'text', text }] };
 }
 
@@ -99,7 +99,7 @@ export interface WatchOptions {
 // Keeps PR status on the dashboard current while an agent is connected. Every failure is
 // swallowed: the watcher must never disturb the agent's session.
 function createWatcher(
-	client: WorkstateClient,
+	client: ChronicleClient,
 	{ intervalMs = 180_000, soonMs = 5_000 }: WatchOptions
 ) {
 	let running = false;
@@ -133,12 +133,12 @@ function createWatcher(
 }
 
 export function createServer(
-	client: WorkstateClient = createClient(),
+	client: ChronicleClient = createClient(),
 	watch: WatchOptions = {
-		intervalMs: Number(process.env.WORKSTATE_PR_SYNC_MS ?? 180_000)
+		intervalMs: Number(process.env.CHRONICLE_PR_SYNC_MS ?? 180_000)
 	}
 ): McpServer {
-	const server = new McpServer({ name: 'workstate', version: '0.1.0' });
+	const server = new McpServer({ name: 'chronicle', version: '0.1.0' });
 	const watcher = createWatcher(client, watch);
 	const close = server.close.bind(server);
 	server.close = async () => {
@@ -150,7 +150,7 @@ export function createServer(
 		'start_task',
 		{
 			description:
-				"Start tracking a multi-step task on this repo's workstate dashboard and return its url; print that url to the user as soon as work starts and try once to open it in their browser. List every known step, with known subtasks under `subtasks`, so the plan shows up front.",
+				"Start tracking a multi-step task on this repo's chronicle dashboard and return its url; print that url to the user as soon as work starts and try once to open it in their browser. List every known step, with known subtasks under `subtasks`, so the plan shows up front.",
 			inputSchema: {
 				title: z.string(),
 				summary: z.string().optional(),

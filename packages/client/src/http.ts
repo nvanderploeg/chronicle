@@ -1,4 +1,4 @@
-export const UNREACHABLE_WARNING = 'workstate unreachable — continuing untracked';
+export const UNREACHABLE_WARNING = 'chronicle unreachable — continuing untracked';
 
 export type Failure = { ok: false; warning: string; status?: number; retryAfterMs?: number };
 export type Reply<T> = { ok: true; status: number; body: T } | Failure;
@@ -65,7 +65,7 @@ export async function request<T>(
 		: '';
 	const failure: Failure = {
 		ok: false,
-		warning: `workstate rejected the update: ${error}${valid}`,
+		warning: `chronicle rejected the update: ${error}${valid}`,
 		status
 	};
 	const seconds = Number(retryAfter);

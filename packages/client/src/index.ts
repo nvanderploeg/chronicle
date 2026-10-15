@@ -16,7 +16,7 @@ import type {
 	ProjectConfig,
 	Result,
 	Task,
-	WorkstateClient
+	ChronicleClient
 } from './types.ts';
 
 export type * from './types.ts';
@@ -30,7 +30,7 @@ export {
 	repoIdentity
 };
 
-const NO_PROJECT_WARNING = 'no workstate project for this repo yet — start a task first';
+const NO_PROJECT_WARNING = 'no chronicle project for this repo yet — start a task first';
 
 const unknownTask = (taskId: string): Failure => ({
 	ok: false,
@@ -72,11 +72,11 @@ async function guard<T>(run: () => Promise<Result<T>>): Promise<Result<T>> {
 		return result.ok ? result : { ok: false, warning: result.warning };
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		return { ok: false, warning: `workstate failed: ${message}` };
+		return { ok: false, warning: `chronicle failed: ${message}` };
 	}
 }
 
-export function createClient(options: ClientOptions = {}): WorkstateClient {
+export function createClient(options: ClientOptions = {}): ChronicleClient {
 	const env = options.env ?? process.env;
 	const run = options.runCommand ?? runCommand;
 	// Tasks whose PRs have all merged or closed: nothing left to watch in this process.
@@ -84,7 +84,7 @@ export function createClient(options: ClientOptions = {}): WorkstateClient {
 	const fetchFn = options.fetch ?? globalThis.fetch;
 	const requestTimeoutMs = options.requestTimeoutMs ?? 2000;
 	const configDir =
-		options.configDir ?? join(env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'workstate');
+		options.configDir ?? join(env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'chronicle');
 	const store = createStore(configDir);
 	const discovery = createDiscovery({
 		fetch: fetchFn,
@@ -191,7 +191,7 @@ export function createClient(options: ClientOptions = {}): WorkstateClient {
 		return { ok: true, value: { ...target.value, key: target.value.key } };
 	}
 
-	const api: WorkstateClient = {
+	const api: ChronicleClient = {
 		discover: () => discovery.discover().catch(() => null),
 
 		startTask: (input) =>

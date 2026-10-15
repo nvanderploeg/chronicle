@@ -50,9 +50,9 @@ describe('agentParts', () => {
 
 describe('linkView', () => {
 	it('names a GitHub PR or issue as repo#number', () => {
-		expect(linkView({ url: 'https://github.com/me/work-state/pull/12' })).toMatchObject({
+		expect(linkView({ url: 'https://github.com/me/chronicle/pull/12' })).toMatchObject({
 			site: 'GitHub',
-			text: 'work-state#12'
+			text: 'chronicle#12'
 		});
 	});
 

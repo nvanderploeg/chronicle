@@ -2,10 +2,10 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { WorkstateClient } from '@workstate/client';
+import type { ChronicleClient } from '@chronicle/client';
 import { run } from './run.ts';
 
-const UNREACHABLE = 'workstate unreachable — continuing untracked';
+const UNREACHABLE = 'chronicle unreachable — continuing untracked';
 const T = '2026-10-12T00:00:00.000Z';
 
 const CONFIG = {
@@ -70,7 +70,7 @@ async function invoke(argv: string[], client: FakeClient) {
 	const code = await run(argv, {
 		stdout: (s) => out.push(s),
 		stderr: (s) => err.push(s),
-		client: client as unknown as WorkstateClient
+		client: client as unknown as ChronicleClient
 	});
 	return { code, stdout: out.join(''), stderr: err.join('') };
 }
@@ -171,7 +171,7 @@ describe('start', () => {
 		const result = await invoke(['start', 'T'], client);
 
 		expect(result.code).toBe(0);
-		expect(result.stderr.trim()).toBe(`workstate: ${UNREACHABLE}`);
+		expect(result.stderr.trim()).toBe(`chronicle: ${UNREACHABLE}`);
 		expect(result.stdout).toBe('');
 	});
 
@@ -275,14 +275,14 @@ describe('step', () => {
 		const client = fakeClient();
 		client.updateStep.mockResolvedValue({
 			ok: false,
-			warning: 'workstate rejected the update: unknown state (valid states: queued, done)'
+			warning: 'chronicle rejected the update: unknown state (valid states: queued, done)'
 		});
 
 		const result = await invoke(['step', 'task-1', 'a', 'nope'], client);
 
 		expect(result.code).toBe(0);
 		expect(result.stderr.trim()).toBe(
-			'workstate: workstate rejected the update: unknown state (valid states: queued, done)'
+			'chronicle: chronicle rejected the update: unknown state (valid states: queued, done)'
 		);
 		expect(result.stdout).toBe('');
 	});
@@ -359,7 +359,7 @@ describe('task', () => {
 		const result = await invoke(['task', 'task-1', 'done'], client);
 
 		expect(result.code).toBe(0);
-		expect(result.stderr.trim()).toBe(`workstate: ${UNREACHABLE}`);
+		expect(result.stderr.trim()).toBe(`chronicle: ${UNREACHABLE}`);
 		expect(result.stdout).toBe('');
 	});
 
@@ -394,7 +394,7 @@ describe('get', () => {
 		const result = await invoke(['get', 'task-1'], client);
 
 		expect(result.code).toBe(0);
-		expect(result.stderr.trim()).toBe(`workstate: ${UNREACHABLE}`);
+		expect(result.stderr.trim()).toBe(`chronicle: ${UNREACHABLE}`);
 		expect(result.stdout).toBe('');
 	});
 
@@ -505,14 +505,14 @@ describe('config', () => {
 		const client = fakeClient();
 		client.configure.mockResolvedValue({
 			ok: false,
-			warning: 'no workstate project for this repo yet — start a task first'
+			warning: 'no chronicle project for this repo yet — start a task first'
 		});
 
 		const result = await invoke(['config', '--theme', 'dark'], client);
 
 		expect(result.code).toBe(0);
 		expect(result.stderr.trim()).toBe(
-			'workstate: no workstate project for this repo yet — start a task first'
+			'chronicle: no chronicle project for this repo yet — start a task first'
 		);
 		expect(result.stdout).toBe('');
 	});
@@ -558,7 +558,7 @@ describe('url', () => {
 		const result = await invoke(['url'], client);
 
 		expect(result.code).toBe(0);
-		expect(result.stderr.trim()).toBe(`workstate: ${UNREACHABLE}`);
+		expect(result.stderr.trim()).toBe(`chronicle: ${UNREACHABLE}`);
 		expect(result.stdout).toBe('');
 	});
 });
@@ -567,13 +567,13 @@ describe('doctor', () => {
 	it('passes --cwd through and prints the report in readable form', async () => {
 		const client = fakeClient();
 		client.doctor.mockResolvedValue({
-			configDir: '/home/u/.config/workstate',
+			configDir: '/home/u/.config/chronicle',
 			pinned: null,
 			probes: [
 				{ server: 'http://localhost:3280', ok: false },
-				{ server: 'https://workstate.nanzero.com', ok: true, version: '9.9.9' }
+				{ server: 'https://chronicle.nanzero.com', ok: true, version: '9.9.9' }
 			],
-			server: 'https://workstate.nanzero.com',
+			server: 'https://chronicle.nanzero.com',
 			repoKey: '/work/agent-repo/.git',
 			registered: { projectId: 'proj-77', name: 'agent-repo' }
 		});
@@ -582,8 +582,8 @@ describe('doctor', () => {
 
 		expect(result.code).toBe(0);
 		expect(client.doctor).toHaveBeenCalledWith({ cwd: '/work/agent-repo' });
-		expect(result.stdout).toContain('/home/u/.config/workstate');
-		expect(result.stdout).toContain('https://workstate.nanzero.com');
+		expect(result.stdout).toContain('/home/u/.config/chronicle');
+		expect(result.stdout).toContain('https://chronicle.nanzero.com');
 		expect(result.stdout).toContain('http://localhost:3280');
 		expect(result.stdout).toContain('/work/agent-repo/.git');
 		expect(result.stdout).toContain('proj-77');
@@ -718,7 +718,7 @@ describe('warnings from every Result command', () => {
 		['config', ['config', '--theme', 'dark'], 'configure'],
 		['url', ['url', 'task-1'], 'projectUrl']
 	] as const)(
-		'%s prints "workstate: <warning>" on stderr and exits 0',
+		'%s prints "chronicle: <warning>" on stderr and exits 0',
 		async (_name, argv, method) => {
 			const client = fakeClient();
 			client[method].mockResolvedValue({ ok: false, warning: UNREACHABLE });
@@ -726,7 +726,7 @@ describe('warnings from every Result command', () => {
 			const result = await invoke([...argv], client);
 
 			expect(result.code).toBe(0);
-			expect(result.stderr.trim()).toBe(`workstate: ${UNREACHABLE}`);
+			expect(result.stderr.trim()).toBe(`chronicle: ${UNREACHABLE}`);
 			expect(result.stdout).toBe('');
 		}
 	);

@@ -1,6 +1,6 @@
 # Plain HTTP; terminate TLS here (certbot --nginx rewrites the listen lines) or in front of it.
 server {
-    server_name workstate.example.com;
+    server_name chronicle.example.com;
 
     location ~ ^/api/projects/[^/]+/stream$ {
         proxy_pass http://127.0.0.1:3280;

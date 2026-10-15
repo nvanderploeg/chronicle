@@ -1,6 +1,6 @@
-# workstate usage
+# chronicle usage
 
-Reference for running, driving and extending workstate. The [README](../README.md) covers what it
+Reference for running, driving and extending chronicle. The [README](../README.md) covers what it
 is and the quick start.
 
 ## Install
@@ -16,8 +16,8 @@ is and the quick start.
 ### Steps
 
 ```sh
-git clone https://github.com/nvanderploeg/work-state
-cd work-state
+git clone https://github.com/nvanderploeg/chronicle
+cd chronicle
 scripts/install.sh --with-server
 ```
 
@@ -29,7 +29,7 @@ local tracker on <http://localhost:3280> and waits for it to be healthy. It is s
 | --------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `--with-server` | Run `docker compose up -d` (MySQL and the app) and wait for `http://localhost:3280/api/health`.                         |
 | `--replace`     | Move conflicting paths aside to `<name>.bak-<timestamp>` and re-register the MCP server, instead of skipping them.      |
-| `--allow-tools` | Add `mcp__workstate__*` to `permissions.allow` in `~/.claude/settings.json`, so Claude Code stops asking for each tool. |
+| `--allow-tools` | Add `mcp__chronicle__*` to `permissions.allow` in `~/.claude/settings.json`, so Claude Code stops asking for each tool. |
 | `--skip-mcp`    | Do not register the MCP server with Claude Code or Codex (skills and CLI are still linked).                             |
 | `--dry-run`     | Print what would happen and change nothing.                                                                             |
 
@@ -40,12 +40,12 @@ as `skip`.
 
 | Where                                        | What                                                                              |
 | -------------------------------------------- | --------------------------------------------------------------------------------- |
-| `~/.agents/skills/workstate`, `.../build-it` | Symlinks to this checkout's `skills/`.                                            |
-| `~/.claude/skills/workstate`, `.../build-it` | Symlinks to the `~/.agents/skills` entries.                                       |
-| `~/.local/bin/workstate`                     | Symlink to the built CLI. Add `~/.local/bin` to `PATH` if the installer warns.    |
-| Claude Code user config                      | `claude mcp add -s user workstate -- node <checkout>/packages/mcp/dist/index.js`. |
-| `~/.codex/config.toml`                       | A `[mcp_servers.workstate]` block (only if `codex` is on `PATH`).                 |
-| `~/.config/workstate/install.json`           | A manifest of the above, so uninstall removes exactly what install added.         |
+| `~/.agents/skills/chronicle`, `.../build-it` | Symlinks to this checkout's `skills/`.                                            |
+| `~/.claude/skills/chronicle`, `.../build-it` | Symlinks to the `~/.agents/skills` entries.                                       |
+| `~/.local/bin/chronicle`                     | Symlink to the built CLI. Add `~/.local/bin` to `PATH` if the installer warns.    |
+| Claude Code user config                      | `claude mcp add -s user chronicle -- node <checkout>/packages/mcp/dist/index.js`. |
+| `~/.codex/config.toml`                       | A `[mcp_servers.chronicle]` block (only if `codex` is on `PATH`).                 |
+| `~/.config/chronicle/install.json`           | A manifest of the above, so uninstall removes exactly what install added.         |
 | `~/.claude/settings.json`                    | Only with `--allow-tools`; the original is backed up first.                       |
 
 The checkout is referenced in place, not copied. Do not move it after installing; re-run the
@@ -54,12 +54,12 @@ installer if you do.
 ### Verify
 
 ```sh
-workstate doctor      # config dir, pin, server probes, repo registration
-claude mcp list       # should list workstate and report it connected
+chronicle doctor      # config dir, pin, server probes, repo registration
+claude mcp list       # should list chronicle and report it connected
 curl http://localhost:3280/api/health
 ```
 
-`workstate doctor` prints which server discovery picks (`server: http://localhost:3280`). Before
+`chronicle doctor` prints which server discovery picks (`server: http://localhost:3280`). Before
 the first task in a repo, `registered: no` is normal.
 
 ### Uninstall
@@ -77,7 +77,7 @@ listed, never restored or deleted. It does not stop the tracker; use `docker com
 
 ### Agents track work on their own
 
-The `workstate` skill tells an agent to open a task when it starts work with three or more steps
+The `chronicle` skill tells an agent to open a task when it starts work with three or more steps
 that will run more than a few minutes or uses subagents. It does not fire for one-step answers or
 quick edits. The agent then:
 
@@ -104,40 +104,40 @@ own node path, so parallel workers show up as parallel rows.
 | `get_task`       | `taskId`                                                                                                     | Read a task, its nodes and notices back (use after context compaction). |
 | `configure`      | `taskId?`, `cwd?`, `config?`, `patch?`                                                                       | Read, replace or patch the project's states, colors, theme.    |
 
-A failure comes back as a text answer starting with `workstate:` (unreachable, unknown task,
+A failure comes back as a text answer starting with `chronicle:` (unreachable, unknown task,
 unknown state with the list of valid ones); the agent carries on. Details: [`client.md`](client.md).
 
 While connected, the MCP server checks open PRs every 3 minutes through `gh` or `glab` and writes
-only what changed. Set `WORKSTATE_PR_SYNC_MS` in its environment to change the interval, or `0` to
+only what changed. Set `CHRONICLE_PR_SYNC_MS` in its environment to change the interval, or `0` to
 turn it off.
 
 ### CLI
 
 ```sh
-id=$(workstate start "Add rate limiting" --summary "Token bucket per API key" --project "Demo API" \
+id=$(chronicle start "Add rate limiting" --summary "Token bucket per API key" --project "Demo API" \
       --step chunk-1="Token bucket core" --step chunk-1/tests="Tests" --step chunk-2="Apply limits" \
       --tool claude-code --model claude-opus-5-5 --effort high \
       --link "https://github.com/me/repo/issues/41" | cut -d' ' -f1)
 
-workstate step "$id" chunk-1 in_work --note "implementing" --tag "round 1" --model claude-sonnet-5-5
-workstate step "$id" chunk-1/tests testing
-workstate notice "$id" assumption "Dates are UTC" --path chunk-1
-workstate step "$id" chunk-1 done --note "a1b2c3d Add token bucket" --tokens 48200
-workstate task "$id" needs_input --note "Limit per key or per IP?"
-workstate task "$id" review --pr "https://github.com/me/repo/pull/42" --tokens 88000
-workstate sync             # refresh PR status; the MCP server does this every 3 minutes
-workstate project --notes "Hardening the API before v2" --link "https://trello.com/b/abc|board"
+chronicle step "$id" chunk-1 in_work --note "implementing" --tag "round 1" --model claude-sonnet-5-5
+chronicle step "$id" chunk-1/tests testing
+chronicle notice "$id" assumption "Dates are UTC" --path chunk-1
+chronicle step "$id" chunk-1 done --note "a1b2c3d Add token bucket" --tokens 48200
+chronicle task "$id" needs_input --note "Limit per key or per IP?"
+chronicle task "$id" review --pr "https://github.com/me/repo/pull/42" --tokens 88000
+chronicle sync             # refresh PR status; the MCP server does this every 3 minutes
+chronicle project --notes "Hardening the API before v2" --link "https://trello.com/b/abc|board"
 
-workstate get "$id"        # JSON of the task and its nodes
-workstate url "$id"        # the task page; without an id, the project page
-workstate doctor
+chronicle get "$id"        # JSON of the task and its nodes
+chronicle url "$id"        # the task page; without an id, the project page
+chronicle doctor
 ```
 
 `start` prints `<taskId> <url>`. A state change clears the note unless you pass `--note`.
 
 ### With build-it
 
-When the `workstate` skill or MCP tools are available, the `build-it` skill mirrors its run onto the
+When the `chronicle` skill or MCP tools are available, the `build-it` skill mirrors its run onto the
 dashboard (its "Track it" section): chunks become steps with `deps:` tags, prework and workers move
 them through planning and in work, a parallel test agent becomes `chunk-N/tests`, a repair round
 adds `round 2` and `opus` tags, a one-way-door Stop sets the step and task to `needs_input` with the
@@ -146,10 +146,10 @@ are `scripts/simulate.mjs` replaying exactly that mapping.
 
 ### Open and share the dashboard
 
-`start_task` returns the task URL (`<server>/p/<projectId>/t/<taskId>`); `workstate url` prints the
+`start_task` returns the task URL (`<server>/p/<projectId>/t/<taskId>`); `chronicle url` prints the
 project or task URL any time. Anyone with a dashboard link can watch; nobody can change anything
 from the browser. The write key is returned once at project creation and stored in
-`~/.config/workstate/projects.json` (mode 0600). Share the link, never the key, and never commit
+`~/.config/chronicle/projects.json` (mode 0600). Share the link, never the key, and never commit
 the registry files.
 
 ![A project page that has gone idle](captures/idle.gif)
@@ -162,12 +162,12 @@ reload.
 States, colors and the theme live in the project config and change live on open pages.
 
 ```sh
-workstate config                                  # read the current config
-workstate config --theme dark                     # system | light | dark
-workstate config --color in_work=#14b8a6          # recolor one state (patch)
-workstate config --initial planning               # state new nodes start in
-workstate config --file my-config.json            # replace the whole config
-workstate config --task <taskId> --color failed=#b91c1c   # target a task's project
+chronicle config                                  # read the current config
+chronicle config --theme dark                     # system | light | dark
+chronicle config --color in_work=#14b8a6          # recolor one state (patch)
+chronicle config --initial planning               # state new nodes start in
+chronicle config --file my-config.json            # replace the whole config
+chronicle config --task <taskId> --color failed=#b91c1c   # target a task's project
 ```
 
 The `configure` MCP tool takes the same thing as `patch`, which merges states by key; a new state
@@ -198,18 +198,18 @@ card and collapses it into a badge; a `failed`-kind state becomes a red badge.
 ### Which server
 
 At each task start the client picks a server in this order and uses the first healthy one (a
-`GET /api/health` answering with `service: "workstate"` within 300 ms for a loopback address, 2 s
+`GET /api/health` answering with `service: "chronicle"` within 300 ms for a loopback address, 2 s
 for any other):
 
-1. `WORKSTATE_URL`, when set. This is a pin: only that server is tried, never another.
+1. `CHRONICLE_URL`, when set. This is a pin: only that server is tried, never another.
 2. `http://localhost:3280`, the local tracker.
-3. `https://workstate.nanzero.com`, the hosted one.
+3. `https://chronicle.nanzero.com`, the hosted one.
 
 If none answers, the agent continues untracked. Later writes for a task go to the server in that
-task's handle (`~/.config/workstate/tasks.json`) without probing again.
+task's handle (`~/.config/chronicle/tasks.json`) without probing again.
 
 ```sh
-export WORKSTATE_URL=http://localhost:5180   # always use this server
+export CHRONICLE_URL=http://localhost:5180   # always use this server
 ```
 
 ## Run the server
@@ -223,7 +223,7 @@ MySQL 8.4 and the app on <http://localhost:3280>; the app applies its migrations
 ```sh
 pnpm install
 pnpm db:start
-pnpm --filter web dev --port 5180      # defaults DATABASE_URL to workstate_dev on :3316
+pnpm --filter web dev --port 5180      # defaults DATABASE_URL to chronicle_dev on :3316
 ```
 
 **Built app.** The migrations folder is resolved from the working directory, so run it from
@@ -232,7 +232,7 @@ pnpm --filter web dev --port 5180      # defaults DATABASE_URL to workstate_dev 
 ```sh
 pnpm --filter web build
 cd apps/web
-DATABASE_URL=mysql://workstate:workstate@127.0.0.1:3316/workstate_dev \
+DATABASE_URL=mysql://chronicle:chronicle@127.0.0.1:3316/chronicle_dev \
 ORIGIN=http://localhost:3000 PORT=3000 node build
 ```
 
@@ -241,15 +241,15 @@ ORIGIN=http://localhost:3000 PORT=3000 node build
 | `DATABASE_URL`                | MySQL connection string. Required outside dev and test mode.                                                                                                                        |
 | `ORIGIN`                      | Public origin the app is served at. The node adapter builds request URLs from it, so the `url` fields the API returns start with it.                                                |
 | `PORT`                        | Port the built app listens on (default 3000).                                                                                                                                       |
-| `WORKSTATE_IDLE_MS`           | Quiet time after the last write before a stream sends `idle` and closes. Default 14 400 000 (4 h).                                                                                  |
-| `WORKSTATE_HEARTBEAT_MS`      | Interval between `: ping` keep-alives on a stream. Default 25 000.                                                                                                                  |
-| `WORKSTATE_WRITES_PER_WINDOW` | Writes (`POST`/`PUT`/`PATCH` under `/api`) one client address may burst, refilled at this many per window; the rest get 429 with `Retry-After`. Default 120; 0 turns the limit off. |
-| `WORKSTATE_WRITE_WINDOW_MS`   | The refill window. Default 300 000 (5 min).                                                                                                                                         |
+| `CHRONICLE_IDLE_MS`           | Quiet time after the last write before a stream sends `idle` and closes. Default 14 400 000 (4 h).                                                                                  |
+| `CHRONICLE_HEARTBEAT_MS`      | Interval between `: ping` keep-alives on a stream. Default 25 000.                                                                                                                  |
+| `CHRONICLE_WRITES_PER_WINDOW` | Writes (`POST`/`PUT`/`PATCH` under `/api`) one client address may burst, refilled at this many per window; the rest get 429 with `Retry-After`. Default 120; 0 turns the limit off. |
+| `CHRONICLE_WRITE_WINDOW_MS`   | The refill window. Default 300 000 (5 min).                                                                                                                                         |
 | `ADDRESS_HEADER`              | Header the client address is read from behind a proxy (`x-real-ip` with the bundled nginx). Unset: the socket address.                                                              |
 
 The local `compose.yaml` passes only `DATABASE_URL` and `ORIGIN` to the app; set the other
-`WORKSTATE_*` variables when running the built app directly or through `deploy/compose.prod.yml`.
-Compose reads `WORKSTATE_PORT` (host port, default 3280), `WORKSTATE_ORIGIN`, `MYSQL_PASSWORD`,
+`CHRONICLE_*` variables when running the built app directly or through `deploy/compose.prod.yml`.
+Compose reads `CHRONICLE_PORT` (host port, default 3280), `CHRONICLE_ORIGIN`, `MYSQL_PASSWORD`,
 `MYSQL_ROOT_PASSWORD` and `MYSQL_PORT` from the environment.
 
 ## Simulate and captures
@@ -315,7 +315,7 @@ The full contract, with types, write semantics and the stream format, is in
 
 ## Deploy
 
-The image is published as `ghcr.io/nvanderploeg/work-state`. [`deploy/`](../deploy/README.md) holds
+The image is published as `ghcr.io/nvanderploeg/chronicle`. [`deploy/`](../deploy/README.md) holds
 example production configuration: a compose stack, an env template, an nginx server block and an
 auto-update timer.
 
@@ -323,10 +323,10 @@ auto-update timer.
 
 ```
 apps/web/        SvelteKit app: dashboard pages, HTTP API, SSE stream, MySQL via drizzle
-packages/client/ discovery, registry files and HTTP calls (@workstate/client)
-packages/cli/    the workstate command
-packages/mcp/    the workstate-mcp stdio server
-skills/          the workstate and build-it agent skills
+packages/client/ discovery, registry files and HTTP calls (@chronicle/client)
+packages/cli/    the chronicle command
+packages/mcp/    the chronicle-mcp stdio server
+skills/          the chronicle and build-it agent skills
 scripts/         install, uninstall, simulate, captures
 e2e/             Playwright capture suite
 docs/            contracts (api.md, client.md, ui.md) and captures/
@@ -342,5 +342,5 @@ pnpm test       # builds the packages, then runs every workspace's tests
 ```
 
 `pnpm test` uses the compose database (`pnpm db:start`): the web tests run against
-`workstate_test` on `127.0.0.1:3316`. The contracts in `docs/` win over the code until they are
+`chronicle_test` on `127.0.0.1:3316`. The contracts in `docs/` win over the code until they are
 edited; [`CONTEXT.md`](../CONTEXT.md) holds the vocabulary.

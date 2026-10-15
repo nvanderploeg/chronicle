@@ -204,11 +204,11 @@ beforeEach(async () => {
 });
 
 describe('GET /api/health', () => {
-	it('reports the workstate service with db ok', async () => {
+	it('reports the chronicle service with db ok', async () => {
 		const res = await getHealth(event({ path: '/api/health' }));
 		expect(res.status).toBe(200);
 		const body = await res.json();
-		expect(body.service).toBe('workstate');
+		expect(body.service).toBe('chronicle');
 		expect(typeof body.version).toBe('string');
 		expect(body.db).toBe('ok');
 	});

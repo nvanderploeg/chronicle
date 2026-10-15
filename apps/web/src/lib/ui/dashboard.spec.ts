@@ -16,7 +16,7 @@ import {
 	taskBucket
 } from './dashboard.ts';
 import type { DashboardState } from './dashboard.ts';
-import type { Node, Notice, Project, ProjectConfig, Task, WorkstateEvent } from '../types.ts';
+import type { Node, Notice, Project, ProjectConfig, Task, ChronicleEvent } from '../types.ts';
 
 const BUILD_IT: ProjectConfig = {
 	theme: 'system',
@@ -153,15 +153,15 @@ function dashboard(over: Partial<DashboardState> = {}): DashboardState {
 	return { project: project(), tasks: [], nodes: [], notices: [], lastSeq: 0, ...over };
 }
 
-function taskEvent(seq: number, t: Task): WorkstateEvent {
+function taskEvent(seq: number, t: Task): ChronicleEvent {
 	return { seq, type: 'task', taskId: t.id, path: null, payload: t, at: t.updatedAt };
 }
 
-function nodeEvent(seq: number, n: Node): WorkstateEvent {
+function nodeEvent(seq: number, n: Node): ChronicleEvent {
 	return { seq, type: 'node', taskId: n.taskId, path: n.path, payload: n, at: n.updatedAt };
 }
 
-function configEvent(seq: number, config: ProjectConfig): WorkstateEvent {
+function configEvent(seq: number, config: ProjectConfig): ChronicleEvent {
 	return { seq, type: 'config', taskId: null, path: null, payload: { config }, at: iso(T0) };
 }
 
@@ -177,7 +177,7 @@ function notice(over: Partial<Notice> = {}): Notice {
 	};
 }
 
-function noticeEvent(seq: number, n: Notice): WorkstateEvent {
+function noticeEvent(seq: number, n: Notice): ChronicleEvent {
 	return { seq, type: 'notice', taskId: n.taskId, path: n.path, payload: n, at: n.createdAt };
 }
 

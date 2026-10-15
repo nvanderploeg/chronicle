@@ -7,7 +7,7 @@ import { POST as postTaskRoute } from '../../routes/api/projects/[id]/tasks/+ser
 import { PUT as putNodeRoute } from '../../routes/api/tasks/[taskId]/nodes/[...path]/+server.ts';
 import { GET as getStreamRoute } from '../../routes/api/projects/[id]/stream/+server.ts';
 
-const BASE = 'http://workstate.test';
+const BASE = 'http://chronicle.test';
 const TIMED_OUT = Symbol('timed out');
 
 interface Frame {

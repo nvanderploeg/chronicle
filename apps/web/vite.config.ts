@@ -6,10 +6,10 @@ import { sveltekit } from '@sveltejs/kit/vite';
 export default defineConfig(({ mode, command }) => {
 	// Set before the sveltekit plugin loads the environment; the real environment wins.
 	if (mode === 'test') {
-		process.env.DATABASE_URL ??= 'mysql://workstate:workstate@127.0.0.1:3316/workstate_test';
+		process.env.DATABASE_URL ??= 'mysql://chronicle:chronicle@127.0.0.1:3316/chronicle_test';
 	}
 	if (mode === 'development') {
-		process.env.DATABASE_URL ??= 'mysql://workstate:workstate@127.0.0.1:3316/workstate_dev';
+		process.env.DATABASE_URL ??= 'mysql://chronicle:chronicle@127.0.0.1:3316/chronicle_dev';
 	}
 	// Route analysis imports server modules; the runtime environment supplies the real value.
 	if (command === 'build') {

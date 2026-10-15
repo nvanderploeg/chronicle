@@ -62,7 +62,7 @@
 </script>
 
 <svelte:head>
-	<title>{board.blocked ? '(!) ' : ''}{tabTitle} · workstate</title>
+	<title>{board.blocked ? '(!) ' : ''}{tabTitle} · chronicle</title>
 	<link rel="icon" type="image/svg+xml" href={icon} />
 </svelte:head>
 

@@ -5,10 +5,10 @@ REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 HELPER="$REPO/scripts/helper.mjs"
 MCP_BIN="$REPO/packages/mcp/dist/index.js"
 CLI_BIN="$REPO/packages/cli/dist/index.js"
-ALLOW_ENTRY='mcp__workstate__*'
+ALLOW_ENTRY='mcp__chronicle__*'
 HOME_DIR=${HOME:?HOME must be set}
 CODEX_CONFIG="${CODEX_HOME:-$HOME_DIR/.codex}/config.toml"
-PORT=${WORKSTATE_PORT:-3280}
+PORT=${CHRONICLE_PORT:-3280}
 
 replace=0 dry=0 with_server=0 allow_tools=0 skip_mcp=0
 stamp=$(date +%Y%m%d%H%M%S)
@@ -17,13 +17,13 @@ usage() {
 	cat <<'USAGE'
 Usage: scripts/install.sh [options]
 
-Installs the workstate skills, MCP server registration and CLI from this checkout.
+Installs the chronicle skills, MCP server registration and CLI from this checkout.
 Safe to re-run; existing paths that are not ours are skipped.
 
   --replace       move conflicting paths aside to <name>.bak-<timestamp> and
                   re-register the MCP server instead of skipping
   --with-server   start the local tracker (docker compose up -d) and wait for it
-  --allow-tools   add "mcp__workstate__*" to permissions.allow in ~/.claude/settings.json
+  --allow-tools   add "mcp__chronicle__*" to permissions.allow in ~/.claude/settings.json
   --skip-mcp      do not register the MCP server with Claude Code or Codex
   --dry-run       print what would happen without changing anything
   -h, --help      show this help
@@ -129,16 +129,16 @@ register_claude() {
 		say skip "claude not on PATH; MCP not registered with Claude Code"
 		return
 	fi
-	if claude mcp get workstate >/dev/null 2>&1; then
+	if claude mcp get chronicle >/dev/null 2>&1; then
 		if [ "$replace" = 0 ]; then
-			say ok "claude MCP 'workstate' already registered"
+			say ok "claude MCP 'chronicle' already registered"
 			return
 		fi
-		act claude mcp remove -s user workstate
+		act claude mcp remove -s user chronicle
 	fi
-	act claude mcp add -s user workstate -- node "$MCP_BIN"
+	act claude mcp add -s user chronicle -- node "$MCP_BIN"
 	record claude-mcp "$REPO"
-	say mcp "registered 'workstate' with Claude Code"
+	say mcp "registered 'chronicle' with Claude Code"
 }
 
 register_codex() {
@@ -146,9 +146,9 @@ register_codex() {
 		say skip "codex not on PATH; MCP not registered with Codex"
 		return
 	fi
-	if [ -f "$CODEX_CONFIG" ] && grep -q '^\[mcp_servers\.workstate\]' "$CODEX_CONFIG"; then
+	if [ -f "$CODEX_CONFIG" ] && grep -q '^\[mcp_servers\.chronicle\]' "$CODEX_CONFIG"; then
 		if [ "$replace" = 0 ]; then
-			say ok "codex MCP 'workstate' already in $CODEX_CONFIG"
+			say ok "codex MCP 'chronicle' already in $CODEX_CONFIG"
 			return
 		fi
 		act node "$HELPER" codex-remove "$CODEX_CONFIG" -
@@ -156,7 +156,7 @@ register_codex() {
 	local arg=${MCP_BIN//\\/\\\\}
 	arg=${arg//\"/\\\"}
 	if [ "$dry" = 1 ]; then
-		say dry "append [mcp_servers.workstate] (node $MCP_BIN) to $CODEX_CONFIG"
+		say dry "append [mcp_servers.chronicle] (node $MCP_BIN) to $CODEX_CONFIG"
 		return
 	fi
 	mkdir -p "$(dirname "$CODEX_CONFIG")"
@@ -165,15 +165,15 @@ register_codex() {
 			[ -z "$(tail -c1 "$CODEX_CONFIG")" ] || printf '\n'
 			printf '\n'
 		fi
-		printf '[mcp_servers.workstate]\ncommand = "node"\nargs = ["%s"]\n' "$arg"
+		printf '[mcp_servers.chronicle]\ncommand = "node"\nargs = ["%s"]\n' "$arg"
 	} >>"$CODEX_CONFIG"
 	record codex-mcp "$REPO" "$CODEX_CONFIG"
-	say mcp "registered 'workstate' in $CODEX_CONFIG"
+	say mcp "registered 'chronicle' in $CODEX_CONFIG"
 }
 
 link_cli() {
 	local bin_dir="$HOME_DIR/.local/bin"
-	link_to "$bin_dir/workstate" "$CLI_BIN" "cli"
+	link_to "$bin_dir/chronicle" "$CLI_BIN" "cli"
 	case ":$PATH:" in
 		*":$bin_dir:"*) ;;
 		*) say warn "$bin_dir is not on PATH; add it to your shell profile" ;;
@@ -205,7 +205,7 @@ start_server() {
 	fi
 	local url="http://localhost:$PORT/api/health" i
 	for i in $(seq 1 60); do
-		if node -e 'fetch(process.argv[1],{signal:AbortSignal.timeout(2000)}).then(r=>r.json()).then(j=>process.exit(j.service==="workstate"?0:1)).catch(()=>process.exit(1))' "$url"; then
+		if node -e 'fetch(process.argv[1],{signal:AbortSignal.timeout(2000)}).then(r=>r.json()).then(j=>process.exit(j.service==="chronicle"?0:1)).catch(()=>process.exit(1))' "$url"; then
 			record server "$REPO"
 			say ok "tracker healthy at http://localhost:$PORT"
 			return
@@ -245,4 +245,4 @@ fi
 link_cli
 [ "$with_server" = 0 ] || start_server
 [ "$allow_tools" = 0 ] || allow_mcp_tools
-say done "workstate installed from $REPO"
+say done "chronicle installed from $REPO"

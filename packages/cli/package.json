@@ -1,9 +1,9 @@
 {
-	"name": "@workstate/cli",
+	"name": "@chronicle/cli",
 	"version": "0.1.0",
 	"type": "module",
 	"bin": {
-		"workstate": "dist/index.js"
+		"chronicle": "dist/index.js"
 	},
 	"files": [
 		"dist"
@@ -14,7 +14,7 @@
 		"test": "vitest run --passWithNoTests"
 	},
 	"dependencies": {
-		"@workstate/client": "workspace:*"
+		"@chronicle/client": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/node": "^22",

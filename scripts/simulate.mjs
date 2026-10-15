@@ -6,7 +6,7 @@ const DEFAULT_SERVER = 'http://localhost:3280';
 
 const USAGE = `Usage: node scripts/simulate.mjs [options]
 
-Plays a build-it style run against a workstate server over its HTTP API.
+Plays a build-it style run against a chronicle server over its HTTP API.
 
   --server <url>     server to write to (default ${DEFAULT_SERVER})
   --speed <n>        divide every delay by n (default 1)

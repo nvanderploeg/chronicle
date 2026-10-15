@@ -1,11 +1,11 @@
 import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit/hooks';
 import { building } from '$app/env';
-import { WORKSTATE_WRITE_WINDOW_MS, WORKSTATE_WRITES_PER_WINDOW } from '$app/env/private';
+import { CHRONICLE_WRITE_WINDOW_MS, CHRONICLE_WRITES_PER_WINDOW } from '$app/env/private';
 import { bootstrap } from '#lib/server/bootstrap.ts';
 import { log } from '#lib/server/log.ts';
 import { createRateLimiter, limitWrites } from '#lib/server/ratelimit.ts';
 
-const writes = createRateLimiter(WORKSTATE_WRITES_PER_WINDOW, WORKSTATE_WRITE_WINDOW_MS);
+const writes = createRateLimiter(CHRONICLE_WRITES_PER_WINDOW, CHRONICLE_WRITE_WINDOW_MS);
 
 export const init: ServerInit = async () => {
 	if (building) return;

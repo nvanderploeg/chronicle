@@ -4,9 +4,9 @@ set -euo pipefail
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 HELPER="$REPO/scripts/helper.mjs"
 MCP_BIN="$REPO/packages/mcp/dist/index.js"
-ALLOW_ENTRY='mcp__workstate__*'
+ALLOW_ENTRY='mcp__chronicle__*'
 HOME_DIR=${HOME:?HOME must be set}
-CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME_DIR/.config}/workstate"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME_DIR/.config}/chronicle"
 MANIFEST="$CONFIG_DIR/install.json"
 
 dry=0 purge=0
@@ -90,19 +90,19 @@ remove_link() {
 
 remove_claude_mcp() {
 	if ! command -v claude >/dev/null 2>&1; then
-		say keep "claude not on PATH; run 'claude mcp remove -s user workstate' yourself"
+		say keep "claude not on PATH; run 'claude mcp remove -s user chronicle' yourself"
 		return
 	fi
 	local info
-	if ! info=$(claude mcp get workstate 2>&1); then
-		say ok "claude MCP 'workstate' already gone"
+	if ! info=$(claude mcp get chronicle 2>&1); then
+		say ok "claude MCP 'chronicle' already gone"
 	elif [[ $info != *"$MCP_BIN"* ]]; then
-		say keep "claude MCP 'workstate' points elsewhere"
+		say keep "claude MCP 'chronicle' points elsewhere"
 	elif [ "$dry" = 1 ]; then
-		say mcp "run 'claude mcp remove -s user workstate'"
+		say mcp "run 'claude mcp remove -s user chronicle'"
 	else
-		claude mcp remove -s user workstate >/dev/null
-		say mcp "removed 'workstate' from Claude Code"
+		claude mcp remove -s user chronicle >/dev/null
+		say mcp "removed 'chronicle' from Claude Code"
 	fi
 	forget claude-mcp "$REPO" -
 }
@@ -110,14 +110,14 @@ remove_claude_mcp() {
 remove_codex_mcp() {
 	local cfg=$1 result
 	if [ "$dry" = 1 ]; then
-		say mcp "remove [mcp_servers.workstate] from $cfg"
+		say mcp "remove [mcp_servers.chronicle] from $cfg"
 		return
 	fi
 	result=$(node "$HELPER" codex-remove "$cfg" "$MCP_BIN")
 	case $result in
-		removed) say mcp "removed 'workstate' from $cfg" ;;
-		absent) say ok "codex MCP 'workstate' already gone from $cfg" ;;
-		*) say keep "codex 'workstate' block in $cfg points elsewhere" ;;
+		removed) say mcp "removed 'chronicle' from $cfg" ;;
+		absent) say ok "codex MCP 'chronicle' already gone from $cfg" ;;
+		*) say keep "codex 'chronicle' block in $cfg points elsewhere" ;;
 	esac
 	forget codex-mcp "$REPO" "$cfg"
 }

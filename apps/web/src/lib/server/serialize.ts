@@ -10,7 +10,7 @@ import type {
 	ProjectConfig,
 	Tag,
 	Task,
-	WorkstateEvent
+	ChronicleEvent
 } from '#lib/types.ts';
 
 export type ProjectRow = typeof projects.$inferSelect;
@@ -84,13 +84,13 @@ export function toNotice(row: NoticeRow): Notice {
 	};
 }
 
-export function toEvent(row: EventRow): WorkstateEvent {
+export function toEvent(row: EventRow): ChronicleEvent {
 	return {
 		seq: Number(row.seq),
-		type: row.type as WorkstateEvent['type'],
+		type: row.type as ChronicleEvent['type'],
 		taskId: row.taskId,
 		path: row.path,
-		payload: row.payload as WorkstateEvent['payload'],
+		payload: row.payload as ChronicleEvent['payload'],
 		at: iso(row.at)
 	};
 }

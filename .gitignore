@@ -155,7 +155,7 @@ build/
 .claude/
 
 # Deployment secrets
-deploy/workstate.env
+deploy/chronicle.env
 .playwright-mcp/
 
 # Playwright

@@ -6,7 +6,7 @@ import type {
 	StateDef,
 	StateKind,
 	Task,
-	WorkstateEvent
+	ChronicleEvent
 } from '../types.ts';
 
 export interface DashboardState {
@@ -44,7 +44,7 @@ function upsertNode(nodes: Node[], node: Node): Node[] {
 	return next;
 }
 
-export function applyEvent(state: DashboardState, event: WorkstateEvent): DashboardState {
+export function applyEvent(state: DashboardState, event: ChronicleEvent): DashboardState {
 	if (event.seq <= state.lastSeq) return state;
 	const next = { ...state, lastSeq: event.seq };
 	if (event.type === 'config') {

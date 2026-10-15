@@ -1,9 +1,9 @@
 {
-	"name": "@workstate/mcp",
+	"name": "@chronicle/mcp",
 	"version": "0.1.0",
 	"type": "module",
 	"bin": {
-		"workstate-mcp": "dist/index.js"
+		"chronicle-mcp": "dist/index.js"
 	},
 	"files": [
 		"dist"
@@ -15,7 +15,7 @@
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.32.1",
-		"@workstate/client": "workspace:*",
+		"@chronicle/client": "workspace:*",
 		"zod": "^4.6.7"
 	},
 	"devDependencies": {

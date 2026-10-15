@@ -1,4 +1,4 @@
-CREATE DATABASE IF NOT EXISTS workstate_dev;
-CREATE DATABASE IF NOT EXISTS workstate_test;
-GRANT ALL PRIVILEGES ON `workstate%`.* TO 'workstate'@'%';
+CREATE DATABASE IF NOT EXISTS chronicle_dev;
+CREATE DATABASE IF NOT EXISTS chronicle_test;
+GRANT ALL PRIVILEGES ON `chronicle%`.* TO 'chronicle'@'%';
 FLUSH PRIVILEGES;

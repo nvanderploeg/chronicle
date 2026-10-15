@@ -1,6 +1,6 @@
-import type { WorkstateEvent } from '#lib/types.ts';
+import type { ChronicleEvent } from '#lib/types.ts';
 
-type Listener = (event: WorkstateEvent) => void;
+type Listener = (event: ChronicleEvent) => void;
 
 const listeners = new Map<string, Set<Listener>>();
 
@@ -14,12 +14,12 @@ export function subscribe(projectId: string, listener: Listener): () => void {
 	};
 }
 
-export function publish(projectId: string, event: WorkstateEvent): void {
+export function publish(projectId: string, event: ChronicleEvent): void {
 	for (const listener of [...(listeners.get(projectId) ?? [])]) {
 		try {
 			listener(event);
 		} catch (error) {
-			console.error('workstate bus listener failed', error);
+			console.error('chronicle bus listener failed', error);
 		}
 	}
 }

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Chronicle"
+  short_description: "Show multi-step work live on a chronicle dashboard"
+policy:
+  allow_implicit_invocation: true

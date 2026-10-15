@@ -30,7 +30,7 @@ import type {
 	ProjectConfig,
 	Snapshot,
 	Task,
-	WorkstateEvent
+	ChronicleEvent
 } from '#lib/types.ts';
 
 export type { ProjectRow, TaskRow, NodeRow };
@@ -55,7 +55,7 @@ export async function lastWriteAt(projectId: string): Promise<Date | null> {
 	return row?.at ?? null;
 }
 
-export async function eventsSince(projectId: string, seq: number): Promise<WorkstateEvent[]> {
+export async function eventsSince(projectId: string, seq: number): Promise<ChronicleEvent[]> {
 	const rows = await db
 		.select()
 		.from(events)
@@ -64,7 +64,7 @@ export async function eventsSince(projectId: string, seq: number): Promise<Works
 	return rows.map(toEvent);
 }
 
-export async function taskEvents(taskId: string, path?: string): Promise<WorkstateEvent[]> {
+export async function taskEvents(taskId: string, path?: string): Promise<ChronicleEvent[]> {
 	const rows = await db
 		.select()
 		.from(events)
@@ -153,10 +153,10 @@ interface Ctx {
 	config: ProjectConfig;
 	now: Date;
 	emit(
-		type: WorkstateEvent['type'],
+		type: ChronicleEvent['type'],
 		taskId: string | null,
 		path: string | null,
-		payload: WorkstateEvent['payload']
+		payload: ChronicleEvent['payload']
 	): Promise<void>;
 }
 
@@ -179,7 +179,7 @@ async function exclusive<T>(key: string, work: () => Promise<T>): Promise<T> {
 
 async function mutate<T>(projectId: string, work: (ctx: Ctx) => Promise<T>): Promise<T> {
 	return exclusive(projectId, async () => {
-		const stored: WorkstateEvent[] = [];
+		const stored: ChronicleEvent[] = [];
 		const value = await db.transaction(async (tx) => {
 			const [project] = await tx
 				.select()

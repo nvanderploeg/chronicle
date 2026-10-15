@@ -1,7 +1,7 @@
 <!-- eslint-disable svelte/no-navigation-without-resolve -- every href is an external URL -->
-<nav class="site" aria-label="About workstate" data-testid="site-footer">
-	<a href="https://github.com/nvanderploeg/work-state" target="_blank" rel="noopener noreferrer"
-		>github.com/nvanderploeg/work-state</a
+<nav class="site" aria-label="About chronicle" data-testid="site-footer">
+	<a href="https://github.com/nvanderploeg/chronicle" target="_blank" rel="noopener noreferrer"
+		>github.com/nvanderploeg/chronicle</a
 	>
 	<a href="https://nanzero.com" target="_blank" rel="noopener noreferrer"
 		>Powered by <strong>Nanzero</strong></a

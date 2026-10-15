@@ -42,9 +42,9 @@ Post the chunk list — title, what it delivers, what it depends on, its narrow 
 
 ## Track it
 
-Applies only when the `workstate` skill or the `workstate` MCP tools are available; otherwise skip this section entirely. Invoke the `workstate` skill, then mirror the run onto the dashboard:
+Applies only when the `chronicle` skill or the `chronicle` MCP tools are available; otherwise skip this section entirely. Invoke the `chronicle` skill, then mirror the run onto the dashboard:
 
-| build-it moment | workstate write |
+| build-it moment | chronicle write |
 |---|---|
 | grounding | `start_task` (plan title, summary, `agent`, the issue in `links`), task state `planning` |
 | chunk list posted | each chunk as step `chunk-N`, state `queued`, tag `deps:…`, with known subtasks (`tests`) nested |
@@ -142,7 +142,7 @@ When tracking, set the task's final state as part of this step: `done` with the 
 
 **Scope:** what is explicitly out — the later chunks, the refactors that are not yours, the files not to touch.
 
-**Workstate** (only when tracking): task <taskId>, node chunk-N — add notes or subtasks under it.
+**Chronicle** (only when tracking): task <taskId>, node chunk-N — add notes or subtasks under it.
 
 **Definition of done:**
 - The behaviour above works, and you have proven it — with `<narrow test command>` where those tests already exist, by running the code where they do not.
@@ -166,7 +166,7 @@ Write the tests that prove the behaviour. Another agent is building the implemen
 
 **Context:** where the tests belong, the test conventions and helpers this project keeps, the fixtures and factories to reuse rather than rebuild.
 
-**Workstate** (only when tracking): task <taskId>, node chunk-N/tests — add notes or subtasks under it.
+**Chronicle** (only when tracking): task <taskId>, node chunk-N/tests — add notes or subtasks under it.
 
 **Definition of done:**
 - The behaviour is covered: the ordinary path, the edges, and every error case the contract names.
@@ -191,7 +191,7 @@ The original worker brief still holds in full — chunk, context, contract, scop
 
 **Leave alone:** the parts of the chunk that reviewed clean, and the nits already fixed by hand. A finding is not a licence to rewrite the chunk — work that was not faulted stays as it is.
 
-**Workstate** (only when tracking): task <taskId>, node chunk-N — add notes or subtasks under it.
+**Chronicle** (only when tracking): task <taskId>, node chunk-N — add notes or subtasks under it.
 
 **Tests:** where they were written in parallel, they now exist and run. `<narrow test command>` must pass, including whatever was failing at reconciliation — and a test is fixed only when it misread the contract, never to make it green.
 
@@ -213,7 +213,7 @@ Review the uncommitted work in this repo — `git status` and `git diff` are the
 
 You have the map so the round goes into the diff rather than into rebuilding it. Go straight at the change; run the narrow tests if you want its behaviour proven.
 
-**Workstate** (only when tracking): task <taskId>, node chunk-N — add notes or subtasks under it.
+**Chronicle** (only when tracking): task <taskId>, node chunk-N — add notes or subtasks under it.
 
 Attack it. Find where it is wrong, not where it is stylish: broken behaviour and edge cases, contracts and invariants it violates, project conventions and ADRs it ignores, tests that assert nothing or pass for the wrong reason, and behaviour the brief demanded that is missing.
 
