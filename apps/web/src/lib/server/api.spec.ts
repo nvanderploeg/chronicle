@@ -19,6 +19,7 @@ import {
 	PATCH as patchTaskHandler
 } from '../../routes/api/tasks/[taskId]/+server.ts';
 import { GET as getEventsHandler } from '../../routes/api/tasks/[taskId]/events/+server.ts';
+import { POST as postNoticeHandler } from '../../routes/api/tasks/[taskId]/notices/+server.ts';
 import { PUT as putNodeHandler } from '../../routes/api/tasks/[taskId]/nodes/[...path]/+server.ts';
 
 type Body = Record<string, any>;
@@ -146,6 +147,16 @@ const api = {
 				params: { taskId }
 			})
 		),
+	postNotice: (taskId: string, body: unknown, key?: string) =>
+		postNoticeHandler(
+			event({
+				method: 'POST',
+				path: `/api/tasks/${taskId}/notices`,
+				body,
+				key,
+				params: { taskId }
+			})
+		),
 	putNode: (taskId: string, path: string, body: unknown, key?: string) =>
 		putNodeHandler(
 			event({
@@ -176,7 +187,7 @@ async function newTask(p: Proj, body: Body = { title: 'Chunk 2' }): Promise<NewT
 	return (await res.json()) as NewTask;
 }
 
-async function taskDetail(taskId: string): Promise<{ task: Body; nodes: Body[] }> {
+async function taskDetail(taskId: string): Promise<{ task: Body; nodes: Body[]; notices: Body[] }> {
 	const res = await api.getTask(taskId);
 	expect(res.status).toBe(200);
 	return res.json();
@@ -1386,6 +1397,95 @@ describe('pull requests on tasks', () => {
 	])('rejects %j', async (pr, error) => {
 		const p = await newProject();
 		const res = await api.createTask(p.id, { title: 'T', prs: [pr] }, p.writeKey);
+		expect(res.status).toBe(400);
+		expect((await res.json()).error).toBe(error);
+	});
+});
+
+describe('POST /api/tasks/:taskId/notices', () => {
+	it('stores a notice, returns it with 201 and lists it with the task and the snapshot', async () => {
+		const p = await newProject();
+		const { taskId } = await newTask(p, { title: 'T', steps: [{ key: 'one' }] });
+
+		const res = await api.postNotice(
+			taskId,
+			{ kind: 'assumption', text: 'Assumed UTC', path: 'one' },
+			p.writeKey
+		);
+
+		expect(res.status).toBe(201);
+		const { notice } = await res.json();
+		expect(notice).toMatchObject({
+			taskId,
+			path: 'one',
+			kind: 'assumption',
+			text: 'Assumed UTC'
+		});
+		expect(notice.id).toMatch(UUID_V4);
+		expect(notice.createdAt).toMatch(ISO);
+		expect((await taskDetail(taskId)).notices).toEqual([notice]);
+		expect((await snapshot(p.id)).notices).toEqual([notice]);
+	});
+
+	it('defaults path to null for a task-level notice', async () => {
+		const p = await newProject();
+		const { taskId } = await newTask(p);
+		const res = await api.postNotice(taskId, { kind: 'caveat', text: 'Flaky' }, p.writeKey);
+		expect((await res.json()).notice.path).toBeNull();
+	});
+
+	it('publishes a notice event but keeps it out of node timelines', async () => {
+		const p = await newProject();
+		const { taskId } = await newTask(p, { title: 'T', steps: [{ key: 'one' }] });
+		const received: Body[] = [];
+		const unsubscribe = subscribe(p.id, (e) => {
+			received.push(e as unknown as Body);
+		});
+
+		await api.postNotice(taskId, { kind: 'caveat', text: 'x', path: 'one' }, p.writeKey);
+		unsubscribe();
+
+		expect(received).toHaveLength(1);
+		expect(received[0]).toMatchObject({ type: 'notice', taskId, path: 'one' });
+		expect((await events(taskId, 'one')).map((e) => e.type)).toEqual(['node']);
+		expect((await events(taskId)).map((e) => e.type)).not.toContain('notice');
+	});
+
+	it('requires the write key of the task project', async () => {
+		const p = await newProject();
+		const other = await newProject();
+		const { taskId } = await newTask(p);
+		const body = { kind: 'caveat', text: 'x' };
+
+		expect((await api.postNotice(taskId, body)).status).toBe(401);
+		expect((await api.postNotice(taskId, body, other.writeKey)).status).toBe(403);
+	});
+
+	it('returns 404 for an unknown task', async () => {
+		const p = await newProject();
+		const res = await api.postNotice(
+			crypto.randomUUID(),
+			{ kind: 'caveat', text: 'x' },
+			p.writeKey
+		);
+		expect(res.status).toBe(404);
+	});
+
+	it.each([
+		[{ text: 'x' }, 'kind is required'],
+		[{ kind: 'hunch', text: 'x' }, 'notice.kind must be one of assumption, caveat'],
+		[{ kind: 'caveat' }, 'text is required'],
+		[{ kind: 'caveat', text: '' }, 'text must be a non-empty string of at most 2000 characters'],
+		[
+			{ kind: 'caveat', text: 'x'.repeat(2001) },
+			'text must be a non-empty string of at most 2000 characters'
+		],
+		[{ kind: 'caveat', text: 'x', path: 'bad key!' }, 'malformed node path'],
+		[{ kind: 'caveat', text: 'x', path: 7 }, 'path must be a string']
+	])('rejects %j', async (body, error) => {
+		const p = await newProject();
+		const { taskId } = await newTask(p);
+		const res = await api.postNotice(taskId, body, p.writeKey);
 		expect(res.status).toBe(400);
 		expect((await res.json()).error).toBe(error);
 	});

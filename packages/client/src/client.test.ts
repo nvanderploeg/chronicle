@@ -698,6 +698,56 @@ describe('startTask', () => {
 	});
 });
 
+describe('addNotice', () => {
+	const NOTICE = {
+		id: 'n-1',
+		taskId: 'task-1',
+		path: 'chunk-1',
+		kind: 'assumption',
+		text: 'Assumed UTC',
+		createdAt: '2026-01-01T00:00:00.000Z'
+	};
+
+	it('POSTs the notice to the handle server with the project write key', async () => {
+		const fake = await startFake(() => ({ status: 201, body: { notice: NOTICE } }));
+		seedHandle(fake.url);
+		const client = makeClient({ candidates: [DEAD] });
+
+		const result = await client.addNotice({
+			taskId: 'task-1',
+			kind: 'assumption',
+			text: 'Assumed UTC',
+			path: 'chunk-1'
+		});
+
+		expect(result).toEqual({ ok: true, value: { notice: NOTICE } });
+		const [req] = fake.requests;
+		expect(req.method).toBe('POST');
+		expect(req.path).toBe('/api/tasks/task-1/notices');
+		expect(req.headers.authorization).toBe('Bearer key-1');
+		expect(req.body).toEqual({ kind: 'assumption', text: 'Assumed UTC', path: 'chunk-1' });
+	});
+
+	it('omits path when none is given', async () => {
+		const fake = await startFake(() => ({ status: 201, body: { notice: NOTICE } }));
+		seedHandle(fake.url);
+		const client = makeClient({ candidates: [DEAD] });
+
+		await client.addNotice({ taskId: 'task-1', kind: 'caveat', text: 'Flaky test' });
+
+		expect(fake.requests[0].body).toEqual({ kind: 'caveat', text: 'Flaky test' });
+	});
+
+	it('returns the unknown-task warning for an unknown task', async () => {
+		const client = makeClient({ candidates: [DEAD] });
+
+		expect(await client.addNotice({ taskId: 'nope', kind: 'caveat', text: 'x' })).toEqual({
+			ok: false,
+			warning: 'unknown task nope on this machine — continuing untracked'
+		});
+	});
+});
+
 describe('updateStep', () => {
 	it('PUTs the node to the handle server with the project write key', async () => {
 		const fake = await startFake((req) =>
@@ -1003,7 +1053,7 @@ describe('getTask', () => {
 
 		expect(result).toEqual({
 			ok: true,
-			value: { task: TASK, nodes: [NODE], url: `${fake.url}/p/proj-1/t/task-1` }
+			value: { task: TASK, nodes: [NODE], notices: [], url: `${fake.url}/p/proj-1/t/task-1` }
 		});
 		expect(fake.requests).toHaveLength(1);
 		expect(fake.requests[0].method).toBe('GET');

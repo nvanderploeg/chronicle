@@ -7,6 +7,7 @@ export interface DashboardState {
 	project: Project;
 	tasks: Task[]; // createdAt desc, id desc on ties
 	nodes: Node[];
+	notices: Notice[];
 	lastSeq: number;
 }
 
@@ -20,6 +21,9 @@ export function taskBucket(task: Task, config: ProjectConfig): 'badge' | 'card';
 export function isStale(task: Task, nodes: Node[], config: ProjectConfig, now: number, staleMs?: number): boolean;
 export function childrenOf(nodes: Node[], taskId: string, parentPath: string | null): Node[];
 export function subtreeStates(nodes: Node[], taskId: string, path: string): string[];
+export type NoticeStatus = 'unread' | 'approved' | 'flagged'; // kept per browser in localStorage
+export function noticesOf(notices: Notice[], taskId: string): Notice[];
+export function needsReview(status: NoticeStatus): boolean;
 export function justFinished(prev: Task | undefined, next: Task, config: ProjectConfig): boolean;
 export function allSettled(tasks: Task[], config: ProjectConfig): boolean;
 export function formatElapsed(fromIso: string, now: number): string;
@@ -32,6 +36,9 @@ export function formatElapsed(fromIso: string, now: number): string;
 - **isStale** — false when the task's kind is `done` or `failed`. Otherwise true when `now - latest > staleMs` (default `STALE_MS`), where `latest` is the newest `updatedAt` among the task and its own nodes (nodes with another `taskId` are ignored).
 - **childrenOf** — nodes of that task whose `parentPath` equals `parentPath` (`null` = steps), sorted by `position` asc, then `path` asc.
 - **subtreeStates** — `state` of every descendant of `path` in that task (not the node itself), in `depth` asc, then `position` asc, then `path` asc order.
+- **applyEvent, notice** — a `notice` event appends its `Notice` unless one with that `id` is already present.
+- **noticesOf** — the notices of that task, in input order.
+- **needsReview** — false for `approved`, true otherwise. A task shows its alert while any of its notices needs review.
 - **justFinished** — true when `next`'s kind is `done` and `prev` is undefined-or-not-done. Used to trigger the green flash; a task first seen already done (on page load) is handled by the caller passing `prev` = the same task, so it returns false.
 - **allSettled** — true when `tasks` is non-empty and every task's kind is `done` or `failed`.
 - **formatElapsed** — elapsed `now - Date.parse(fromIso)`, floored, negative treated as 0: under 60 s → `'<n>s'`; under 60 min → `'<n>m'`; under 24 h → `'<h>h'` or `'<h>h <m>m'` when minutes > 0; otherwise `'<d>d'` or `'<d>d <h>h'` when hours > 0. Examples: 0 → `'0s'`, 59 999 ms → `'59s'`, 60 000 → `'1m'`, 3 600 000 → `'1h'`, 3 900 000 → `'1h 5m'`, 90 000 000 → `'1d 1h'`.

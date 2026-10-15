@@ -55,6 +55,7 @@ function fakeClient() {
 		updateProject: vi.fn(),
 		syncPrs: vi.fn(),
 		getTask: vi.fn(),
+		addNotice: vi.fn(),
 		configure: vi.fn(),
 		projectUrl: vi.fn(),
 		doctor: vi.fn()
@@ -608,6 +609,39 @@ describe('doctor', () => {
 	});
 });
 
+describe('notice', () => {
+	it('sends the kind, text and path to addNotice and prints the id', async () => {
+		const client = fakeClient();
+		client.addNotice.mockResolvedValue({
+			ok: true,
+			value: { notice: { id: 'n-1', kind: 'assumption' } }
+		});
+
+		const result = await invoke(
+			['notice', 'task-1', 'assumption', 'Assumed UTC', '--path', 'chunk-1'],
+			client
+		);
+
+		expect(result.code).toBe(0);
+		expect(result.stdout).toContain('n-1 assumption');
+		expect(client.addNotice).toHaveBeenCalledWith({
+			taskId: 'task-1',
+			kind: 'assumption',
+			text: 'Assumed UTC',
+			path: 'chunk-1'
+		});
+	});
+
+	it('exits 2 with usage for an unknown kind', async () => {
+		const client = fakeClient();
+
+		const result = await invoke(['notice', 'task-1', 'hunch', 'x'], client);
+
+		expect(result.code).toBe(2);
+		expect(client.addNotice).not.toHaveBeenCalled();
+	});
+});
+
 describe('usage errors', () => {
 	const allMethods = [
 		'discover',
@@ -679,6 +713,7 @@ describe('warnings from every Result command', () => {
 		['start', ['start', 'T'], 'startTask'],
 		['step', ['step', 'task-1', 'a/b', 'done'], 'updateStep'],
 		['task', ['task', 'task-1', 'done'], 'updateTask'],
+		['notice', ['notice', 'task-1', 'caveat', 'x'], 'addNotice'],
 		['get', ['get', 'task-1'], 'getTask'],
 		['config', ['config', '--theme', 'dark'], 'configure'],
 		['url', ['url', 'task-1'], 'projectUrl']

@@ -9,12 +9,14 @@ import {
 	isStale,
 	justFinished,
 	kindOf,
+	needsReview,
+	noticesOf,
 	stateOf,
 	subtreeStates,
 	taskBucket
 } from './dashboard.ts';
 import type { DashboardState } from './dashboard.ts';
-import type { Node, Project, ProjectConfig, Task, WorkstateEvent } from '../types.ts';
+import type { Node, Notice, Project, ProjectConfig, Task, WorkstateEvent } from '../types.ts';
 
 const BUILD_IT: ProjectConfig = {
 	theme: 'system',
@@ -148,7 +150,7 @@ function project(over: Partial<Project> = {}): Project {
 }
 
 function dashboard(over: Partial<DashboardState> = {}): DashboardState {
-	return { project: project(), tasks: [], nodes: [], lastSeq: 0, ...over };
+	return { project: project(), tasks: [], nodes: [], notices: [], lastSeq: 0, ...over };
 }
 
 function taskEvent(seq: number, t: Task): WorkstateEvent {
@@ -163,6 +165,22 @@ function configEvent(seq: number, config: ProjectConfig): WorkstateEvent {
 	return { seq, type: 'config', taskId: null, path: null, payload: { config }, at: iso(T0) };
 }
 
+function notice(over: Partial<Notice> = {}): Notice {
+	return {
+		id: 'n1',
+		taskId: 'a',
+		path: null,
+		kind: 'caveat',
+		text: 'x',
+		createdAt: iso(T0),
+		...over
+	};
+}
+
+function noticeEvent(seq: number, n: Notice): WorkstateEvent {
+	return { seq, type: 'notice', taskId: n.taskId, path: n.path, payload: n, at: n.createdAt };
+}
+
 function deepFreeze<T>(value: T): T {
 	if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
 		Object.freeze(value);
@@ -170,6 +188,26 @@ function deepFreeze<T>(value: T): T {
 	}
 	return value;
 }
+
+describe('notices', () => {
+	it('applyEvent appends a notice once, even when the same notice arrives under a new seq', () => {
+		const n = notice();
+		const once = applyEvent(dashboard(), noticeEvent(1, n));
+		expect(once.notices).toEqual([n]);
+		expect(applyEvent(once, noticeEvent(2, n)).notices).toEqual([n]);
+	});
+
+	it('noticesOf keeps only the given task', () => {
+		const mine = notice({ id: 'n1', taskId: 'a' });
+		expect(noticesOf([mine, notice({ id: 'n2', taskId: 'b' })], 'a')).toEqual([mine]);
+	});
+
+	it('needsReview is false only for approved', () => {
+		expect(needsReview('unread')).toBe(true);
+		expect(needsReview('flagged')).toBe(true);
+		expect(needsReview('approved')).toBe(false);
+	});
+});
 
 describe('applyEvent', () => {
 	it('takes name, notes and links from a project event and keeps the config', () => {

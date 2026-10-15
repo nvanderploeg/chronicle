@@ -1,5 +1,6 @@
 import type {
 	Node,
+	Notice,
 	Project,
 	ProjectConfig,
 	StateDef,
@@ -12,8 +13,12 @@ export interface DashboardState {
 	project: Project;
 	tasks: Task[];
 	nodes: Node[];
+	notices: Notice[];
 	lastSeq: number;
 }
+
+// Held per browser only; a notice with no entry is unread.
+export type NoticeStatus = 'unread' | 'approved' | 'flagged';
 
 export const FALLBACK_COLOR = '#9ca3af';
 export const STALE_MS = 4 * 60 * 60 * 1000;
@@ -50,6 +55,11 @@ export function applyEvent(state: DashboardState, event: WorkstateEvent): Dashbo
 		next.project = { ...state.project, name, notes, links };
 	} else if (event.type === 'task') {
 		next.tasks = upsertTask(state.tasks, event.payload as Task);
+	} else if (event.type === 'notice') {
+		const notice = event.payload as Notice;
+		if (!state.notices.some((n) => n.id === notice.id)) {
+			next.notices = [...state.notices, notice];
+		}
 	} else {
 		next.nodes = upsertNode(state.nodes, event.payload as Node);
 	}
@@ -119,6 +129,15 @@ export function subtreeStates(nodes: Node[], taskId: string, path: string): stri
 		.filter((n) => n.taskId === taskId && n.path.startsWith(prefix))
 		.sort((a, b) => a.depth - b.depth || byPositionThenPath(a, b))
 		.map((n) => n.state);
+}
+
+export function noticesOf(notices: Notice[], taskId: string): Notice[] {
+	return notices.filter((n) => n.taskId === taskId);
+}
+
+// Approved notices stop raising the alert; unread and flagged ones keep it.
+export function needsReview(status: NoticeStatus): boolean {
+	return status !== 'approved';
 }
 
 export function justFinished(prev: Task | undefined, next: Task, config: ProjectConfig): boolean {

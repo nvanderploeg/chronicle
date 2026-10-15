@@ -1,13 +1,16 @@
 import { getContext, setContext } from 'svelte';
 import { SvelteDate, SvelteMap, SvelteSet } from 'svelte/reactivity';
-import type { Node, ProjectConfig, Task, WorkstateEvent } from '../types.ts';
+import type { Node, Notice, ProjectConfig, Task, WorkstateEvent } from '../types.ts';
 import {
 	allSettled,
 	applyEvent,
 	justFinished,
 	kindOf,
+	needsReview,
+	noticesOf,
 	taskBucket,
-	type DashboardState
+	type DashboardState,
+	type NoticeStatus
 } from './dashboard.ts';
 
 export const FLASH_MS = 1800;
@@ -54,6 +57,7 @@ export class Board {
 	open = new SvelteSet<string>();
 	timelineOpen = new SvelteSet<string>();
 	timelines = new SvelteMap<string, Timeline>();
+	noticeStatus = new SvelteMap<string, Exclude<NoticeStatus, 'unread'>>();
 
 	readonly only: string | null;
 
@@ -62,6 +66,7 @@ export class Board {
 	cards: Task[];
 	badges: Task[];
 	opened: Task[];
+	notices: Notice[];
 	blocked: number;
 	flashColor: string;
 
@@ -91,6 +96,9 @@ export class Board {
 					)
 		);
 		this.opened = $derived(this.badges.filter((t) => this.open.has(t.id)));
+		this.notices = $derived(
+			this.only ? this.state.notices.filter((n) => n.taskId === this.only) : this.state.notices
+		);
 		this.blocked = $derived(
 			this.tasks.filter((t) => kindOf(this.config, t.state) === 'blocked').length
 		);
@@ -103,6 +111,25 @@ export class Board {
 		return this.state.nodes.filter((n) => n.taskId === taskId);
 	}
 
+	noticesOf(taskId: string): Notice[] {
+		return noticesOf(this.state.notices, taskId);
+	}
+
+	statusOf(id: string): NoticeStatus {
+		return this.noticeStatus.get(id) ?? 'unread';
+	}
+
+	pendingNotices(taskId: string): number {
+		return this.noticesOf(taskId).filter((n) => needsReview(this.statusOf(n.id))).length;
+	}
+
+	// Setting the status a notice already has clears it back to unread.
+	setNoticeStatus(id: string, status: Exclude<NoticeStatus, 'unread'>): void {
+		if (this.noticeStatus.get(id) === status) this.noticeStatus.delete(id);
+		else this.noticeStatus.set(id, status);
+		this.saveNoticeStatus();
+	}
+
 	ms(value: number): number {
 		return this.reduced ? 0 : value;
 	}
@@ -110,6 +137,7 @@ export class Board {
 	start(): () => void {
 		this.now = Date.now();
 		this.loadOpen();
+		this.loadNoticeStatus();
 
 		const media = window.matchMedia('(prefers-reduced-motion: reduce)');
 		this.reduced = media.matches;
@@ -135,7 +163,7 @@ export class Board {
 		es.onerror = () => {
 			if (es.readyState !== EventSource.CLOSED) this.connection = 'retrying';
 		};
-		for (const type of ['task', 'node', 'config', 'project'] as const) {
+		for (const type of ['task', 'node', 'notice', 'config', 'project'] as const) {
 			es.addEventListener(type, (e) => this.onFrame(type, e as MessageEvent));
 		}
 		es.addEventListener('idle', () => {
@@ -166,6 +194,11 @@ export class Board {
 			taskId = (payload as Node).taskId;
 			path = (payload as Node).path;
 			at = (payload as Node).updatedAt;
+		}
+		if (type === 'notice') {
+			taskId = (payload as Notice).taskId;
+			path = (payload as Notice).path;
+			at = (payload as Notice).createdAt;
 		}
 		this.receive({ seq, type, taskId, path, payload, at });
 	}
@@ -240,6 +273,32 @@ export class Board {
 			localStorage.setItem(this.storageKey, JSON.stringify([...this.open]));
 		} catch {
 			// storage unavailable: expansion stays per page load
+		}
+	}
+
+	private get noticeKey(): string {
+		return `workstate:${this.state.project.id}:notices`;
+	}
+
+	private loadNoticeStatus(): void {
+		try {
+			const raw = localStorage.getItem(this.noticeKey);
+			const parsed: unknown = raw ? JSON.parse(raw) : {};
+			if (parsed && typeof parsed === 'object') {
+				for (const [id, status] of Object.entries(parsed)) {
+					if (status === 'approved' || status === 'flagged') this.noticeStatus.set(id, status);
+				}
+			}
+		} catch {
+			// storage unavailable or corrupt: every notice reads as unread
+		}
+	}
+
+	private saveNoticeStatus(): void {
+		try {
+			localStorage.setItem(this.noticeKey, JSON.stringify(Object.fromEntries(this.noticeStatus)));
+		} catch {
+			// storage unavailable: review marks last for this page load
 		}
 	}
 

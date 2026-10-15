@@ -99,18 +99,30 @@ export interface Node {
 	stateSince: string;
 }
 
+export type NoticeKind = 'assumption' | 'caveat';
+
+export interface Notice {
+	id: string;
+	taskId: string;
+	path: string | null;
+	kind: NoticeKind;
+	text: string;
+	createdAt: string;
+}
+
 export interface Snapshot {
 	project: Project;
 	tasks: Task[];
 	nodes: Node[];
+	notices: Notice[];
 	lastSeq: number;
 }
 
 export interface WorkstateEvent {
 	seq: number;
-	type: 'config' | 'project' | 'task' | 'node';
+	type: 'config' | 'project' | 'task' | 'node' | 'notice';
 	taskId: string | null;
 	path: string | null;
-	payload: { config: ProjectConfig } | Project | Task | Node;
+	payload: { config: ProjectConfig } | Project | Task | Node | Notice;
 	at: string;
 }

@@ -8,6 +8,7 @@ Every package builds against this file. When behaviour and this file disagree, t
 - **Task** — one multi-step job on a project. Server-generated UUID v4. Has its own explicit state, set by agents.
 - **Node** — a step or subtask in a task's tree, addressed by a **path** of agent-chosen keys joined by `/` (`chunk-2`, `chunk-2/tests`). Depth 1 = step.
 - **State** — a key from the project config. Each state has a **kind**.
+- **Notice** — an assumption or caveat an agent flags on a task or one of its nodes. Append-only; review marks live in the viewer's browser, never on the server.
 
 ## Types
 
@@ -111,19 +112,29 @@ interface Node {
 	stateSince: string;
 }
 
+interface Notice {
+	id: string; // UUID v4
+	taskId: string;
+	path: string | null; // the node it belongs to; null for the task as a whole
+	kind: 'assumption' | 'caveat';
+	text: string; // non-empty, ≤ 2000 chars
+	createdAt: string;
+}
+
 interface Snapshot {
 	project: Project;
 	tasks: Task[]; // ordered by createdAt desc
 	nodes: Node[]; // all nodes of those tasks, ordered by taskId, depth, position
+	notices: Notice[]; // all notices of those tasks, ordered by createdAt, id
 	lastSeq: number; // highest event seq for this project, 0 if none
 }
 
 interface WorkstateEvent {
 	seq: number;
-	type: 'config' | 'project' | 'task' | 'node';
+	type: 'config' | 'project' | 'task' | 'node' | 'notice';
 	taskId: string | null;
 	path: string | null;
-	payload: { config: ProjectConfig } | Project | Task | Node; // full row snapshot after the write
+	payload: { config: ProjectConfig } | Project | Task | Node | Notice; // full row snapshot after the write
 	at: string;
 }
 ```
@@ -159,10 +170,11 @@ Writes (🔑) need `Authorization: Bearer <writeKey>` of the project that owns t
 | PUT 🔑  | `/api/projects/:id/config`          | `ProjectConfig`                                  | 200 `{ config }`                                      |
 | PATCH 🔑 | `/api/projects/:id/config`         | `ConfigPatch`                                    | 200 `{ config }`                                      |
 | POST 🔑 | `/api/projects/:id/tasks`           | `{ title, summary?, state?, note?, agent?, links?, prs?, repo?, branch?, steps? }` | 201 `{ taskId, url, task, nodes }` |
-| GET    | `/api/tasks/:taskId`                | —                                                | 200 `{ task, nodes }`                                 |
-| GET    | `/api/tasks/:taskId/events`         | query `path?`                                    | 200 `{ events: WorkstateEvent[] }` (seq asc; `path` filters to that node) |
+| GET    | `/api/tasks/:taskId`                | —                                                | 200 `{ task, nodes, notices }`                        |
+| GET    | `/api/tasks/:taskId/events`         | query `path?`                                    | 200 `{ events: WorkstateEvent[] }` (seq asc; `path` filters to that node; `notice` events are left out) |
 | PATCH 🔑 | `/api/tasks/:taskId`               | `{ title?, summary?, state?, note?, agent?, links?, prs?, repo?, branch? }` | 200 `{ task }`  |
 | PUT 🔑  | `/api/tasks/:taskId/nodes/<path…>`  | `{ title?, state?, note?, tags?, agent?, links?, position? }` | 200 `{ node }`               |
+| POST 🔑 | `/api/tasks/:taskId/notices`        | `{ kind, text, path? }`                          | 201 `{ notice }`                                      |
 | GET    | `/api/projects/:id/stream`          | header `Last-Event-ID` or query `since`          | 200 `text/event-stream`                               |
 
 - `POST /api/projects`: `name` defaults to a random three-word moniker (`Quiet Teal Otter`), returned in the body; `preset` defaults to `'build-it'`; `config`, when given, is used instead of the preset. Unknown preset or invalid config → 400. `url` = `<origin>/p/<id>`.

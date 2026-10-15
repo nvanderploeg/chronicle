@@ -1,8 +1,10 @@
-import type { events, nodes, projects, tasks } from '#lib/server/db/schema.ts';
+import type { events, nodes, notices, projects, tasks } from '#lib/server/db/schema.ts';
 import type {
 	AgentInfo,
 	Link,
 	Node,
+	Notice,
+	NoticeKind,
 	PullRequest,
 	Project,
 	ProjectConfig,
@@ -14,6 +16,7 @@ import type {
 export type ProjectRow = typeof projects.$inferSelect;
 export type TaskRow = typeof tasks.$inferSelect;
 export type NodeRow = typeof nodes.$inferSelect;
+export type NoticeRow = typeof notices.$inferSelect;
 export type EventRow = typeof events.$inferSelect;
 
 const iso = (date: Date) => date.toISOString();
@@ -67,6 +70,17 @@ export function toNode(row: NodeRow): Node {
 		createdAt: iso(row.createdAt),
 		updatedAt: iso(row.updatedAt),
 		stateSince: iso(row.stateSince)
+	};
+}
+
+export function toNotice(row: NoticeRow): Notice {
+	return {
+		id: row.id,
+		taskId: row.taskId,
+		path: row.path ?? null,
+		kind: row.kind as NoticeKind,
+		text: row.text,
+		createdAt: iso(row.createdAt)
 	};
 }
 

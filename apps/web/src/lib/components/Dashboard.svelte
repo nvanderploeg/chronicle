@@ -8,6 +8,7 @@
 	import type { Snapshot } from '../types.ts';
 	import { eyeColor, eyeSvg } from '../ui/meta.ts';
 	import Links from './Links.svelte';
+	import NoticesTab from './NoticesTab.svelte';
 	import SiteFooter from './SiteFooter.svelte';
 	import StateMark from './StateMark.svelte';
 	import TaskCard from './TaskCard.svelte';
@@ -38,6 +39,11 @@
 			};
 		}
 	});
+
+	let view = $state<'tasks' | 'notices'>('tasks');
+	const pendingNotices = $derived(
+		board.notices.filter((n) => board.statusOf(n.id) !== 'approved').length
+	);
 
 	const project = $derived(board.state.project);
 	const title = $derived(taskId ? (board.tasks[0]?.title ?? project.name) : project.name);
@@ -95,55 +101,80 @@
 		{/each}
 	</ul>
 
+	<nav class="tabs" aria-label="Views">
+		<button
+			type="button"
+			aria-current={view === 'tasks' ? 'page' : undefined}
+			data-testid="tab-tasks"
+			onclick={() => (view = 'tasks')}>Tasks</button
+		>
+		<button
+			type="button"
+			aria-current={view === 'notices' ? 'page' : undefined}
+			data-testid="tab-notices"
+			onclick={() => (view = 'notices')}
+		>
+			Notices{#if pendingNotices}<span
+					class="dot"
+					data-testid="notices-dot"
+					aria-label="has notices"
+				></span>{/if}
+		</button>
+	</nav>
+
 	<main>
-		{#if board.badges.length}
-			<div class="strip" data-testid="badge-strip">
-				{#each board.badges as task (task.id)}
-					{@const def = board.config.states.find((s) => s.key === task.state)}
-					<button
-						type="button"
-						class="badge state-{task.state} kind-{def?.kind ?? 'pending'}"
-						style:--sc={def?.color ?? '#9ca3af'}
-						aria-expanded={board.open.has(task.id)}
-						data-testid="task-badge"
-						data-task-id={task.id}
+		{#if view === 'notices'}
+			<NoticesTab />
+		{:else}
+			{#if board.badges.length}
+				<div class="strip" data-testid="badge-strip">
+					{#each board.badges as task (task.id)}
+						{@const def = board.config.states.find((s) => s.key === task.state)}
+						<button
+							type="button"
+							class="badge state-{task.state} kind-{def?.kind ?? 'pending'}"
+							style:--sc={def?.color ?? '#9ca3af'}
+							aria-expanded={board.open.has(task.id)}
+							data-testid="task-badge"
+							data-task-id={task.id}
+							animate:flip={{ duration: board.ms(350) }}
+							in:receive={{ key: task.id }}
+							out:send={{ key: task.id }}
+							onclick={() => board.toggle(task.id)}
+						>
+							<span class="glyph" aria-hidden="true">{def?.icon ?? '?'}</span>
+							<span class="label">{task.title}</span>
+						</button>
+					{/each}
+				</div>
+			{/if}
+
+			{#if board.opened.length}
+				<div class="opened">
+					{#each board.opened as task (task.id)}
+						<div class="slot" transition:slide|local={{ duration: board.ms(250) }}>
+							<TaskCard {task} />
+						</div>
+					{/each}
+				</div>
+			{/if}
+
+			<div class="cards">
+				{#each board.cards as task (task.id)}
+					<div
+						class="slot"
 						animate:flip={{ duration: board.ms(350) }}
 						in:receive={{ key: task.id }}
 						out:send={{ key: task.id }}
-						onclick={() => board.toggle(task.id)}
 					>
-						<span class="glyph" aria-hidden="true">{def?.icon ?? '?'}</span>
-						<span class="label">{task.title}</span>
-					</button>
-				{/each}
-			</div>
-		{/if}
-
-		{#if board.opened.length}
-			<div class="opened">
-				{#each board.opened as task (task.id)}
-					<div class="slot" transition:slide|local={{ duration: board.ms(250) }}>
-						<TaskCard {task} />
+						<TaskCard {task} drill={taskId !== null} />
 					</div>
 				{/each}
 			</div>
-		{/if}
 
-		<div class="cards">
-			{#each board.cards as task (task.id)}
-				<div
-					class="slot"
-					animate:flip={{ duration: board.ms(350) }}
-					in:receive={{ key: task.id }}
-					out:send={{ key: task.id }}
-				>
-					<TaskCard {task} drill={taskId !== null} />
-				</div>
-			{/each}
-		</div>
-
-		{#if board.tasks.length === 0}
-			<p class="empty">No tasks yet. They appear here as soon as an agent starts one.</p>
+			{#if board.tasks.length === 0}
+				<p class="empty">No tasks yet. They appear here as soon as an agent starts one.</p>
+			{/if}
 		{/if}
 	</main>
 
@@ -312,6 +343,45 @@
 		width: 1.2rem;
 		height: 1.2rem;
 		font-size: 0.65rem;
+	}
+
+	.tabs {
+		display: flex;
+		gap: 1.25rem;
+		margin-bottom: 1.25rem;
+		border-bottom: 1px solid var(--line);
+	}
+
+	.tabs button {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.45rem;
+		margin-bottom: -1px;
+		padding: 0.4rem 0.1rem;
+		border: 0;
+		border-bottom: 2px solid transparent;
+		background: none;
+		color: var(--muted);
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.tabs button[aria-current='page'] {
+		border-bottom-color: var(--ink);
+		color: var(--ink);
+	}
+
+	.tabs button:focus-visible {
+		outline: 2px solid var(--ink);
+		outline-offset: 2px;
+	}
+
+	.dot {
+		width: 0.55rem;
+		height: 0.55rem;
+		border-radius: 50%;
+		background: #eab308;
 	}
 
 	.strip {

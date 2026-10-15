@@ -100,7 +100,8 @@ own node path, so parallel workers show up as parallel rows.
 | `update_step`    | `taskId`, `path`, `title?`, `state?`, `note?`, `tags?`, `agent?`, `links?`, `position?`                      | Upsert a step or subtask by path (`chunk-2`, `chunk-2/tests`). |
 | `update_task`    | `taskId`, `title?`, `summary?`, `state?`, `note?`, `agent?`, `links?`                                        | Change the task itself.                                        |
 | `update_project` | `taskId?`, `cwd?`, `name?`, `notes?`, `links?`                                                               | Rename the project, set its notes and project-wide links.      |
-| `get_task`       | `taskId`                                                                                                     | Read a task and its nodes back (use after context compaction). |
+| `add_notice`     | `taskId`, `kind` (`assumption`\|`caveat`), `text`, `path?`                                                   | Flag an assumption or caveat; shows as an alert on the task and in the Notices tab. |
+| `get_task`       | `taskId`                                                                                                     | Read a task, its nodes and notices back (use after context compaction). |
 | `configure`      | `taskId?`, `cwd?`, `config?`, `patch?`                                                                       | Read, replace or patch the project's states, colors, theme.    |
 
 A failure comes back as a text answer starting with `workstate:` (unreachable, unknown task,
@@ -120,6 +121,7 @@ id=$(workstate start "Add rate limiting" --summary "Token bucket per API key" --
 
 workstate step "$id" chunk-1 in_work --note "implementing" --tag "round 1" --model claude-sonnet-5-5
 workstate step "$id" chunk-1/tests testing
+workstate notice "$id" assumption "Dates are UTC" --path chunk-1
 workstate step "$id" chunk-1 done --note "a1b2c3d Add token bucket" --tokens 48200
 workstate task "$id" needs_input --note "Limit per key or per IP?"
 workstate task "$id" review --pr "https://github.com/me/repo/pull/42" --tokens 88000
@@ -292,13 +294,14 @@ project.
 | GET       | `/api/health`                      | Service and database status.                       |
 | GET       | `/api/presets`                     | Available state presets.                           |
 | POST      | `/api/projects`                    | Create a project; returns `id`, `writeKey`, `url`. |
-| GET       | `/api/projects/:id`                | Snapshot: project, tasks, nodes, `lastSeq`.        |
+| GET       | `/api/projects/:id`                | Snapshot: project, tasks, nodes, notices, `lastSeq`. |
 | PUT/PATCH | `/api/projects/:id/config`         | Replace or patch the config (key).                 |
 | POST      | `/api/projects/:id/tasks`          | Create a task, optionally with steps (key).        |
-| GET       | `/api/tasks/:taskId`               | A task and its nodes.                              |
+| GET       | `/api/tasks/:taskId`               | A task, its nodes and notices.                     |
 | GET       | `/api/tasks/:taskId/events`        | History, optionally for one node `path`.           |
 | PATCH     | `/api/tasks/:taskId`               | Title, summary, state, note (key).                 |
 | PUT       | `/api/tasks/:taskId/nodes/<path…>` | Upsert a step or subtask (key).                    |
+| POST      | `/api/tasks/:taskId/notices`       | Flag an assumption or caveat (key).                |
 | GET       | `/api/projects/:id/stream`         | SSE; resume with `Last-Event-ID` or `?since=`.     |
 
 ```sh

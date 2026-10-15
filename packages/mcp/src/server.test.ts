@@ -59,6 +59,15 @@ function notOkResult(warning: string) {
 	return { ok: false, warning };
 }
 
+const NOTICE = {
+	id: 'n1',
+	taskId: 'task1',
+	path: null,
+	kind: 'caveat',
+	text: 'Flaky test skipped',
+	createdAt: '2026-01-01T00:00:00.000Z'
+};
+
 function fakeClient(): FakeClient {
 	return {
 		discover: vi.fn(async () => SERVER),
@@ -78,7 +87,10 @@ function fakeClient(): FakeClient {
 		updateProject: vi.fn(async () =>
 			okResult({ project: { id: 'proj1', name: 'P' }, projectUrl: `${SERVER}/p/proj1` })
 		),
-		getTask: vi.fn(async () => okResult({ task: TASK, nodes: [STEP_NODE], url: TASK_URL })),
+		addNotice: vi.fn(async () => okResult({ notice: NOTICE })),
+		getTask: vi.fn(async () =>
+			okResult({ task: TASK, nodes: [STEP_NODE], notices: [], url: TASK_URL })
+		),
 		configure: vi.fn(async () => okResult({ config: CONFIG, projectUrl: `${SERVER}/p/proj1` })),
 		projectUrl: vi.fn(async () => okResult({ url: `${SERVER}/p/proj1` })),
 		doctor: vi.fn(async () => ({
@@ -141,12 +153,13 @@ describe('workstate MCP server', () => {
 	});
 
 	describe('tool listing', () => {
-		it('lists exactly the six workstate tools', async () => {
+		it('lists exactly the seven workstate tools', async () => {
 			const { mcp } = await connect();
 
 			const { tools } = await mcp.listTools();
 
 			expect(tools.map((t) => t.name).sort()).toEqual([
+				'add_notice',
 				'configure',
 				'get_task',
 				'start_task',
@@ -421,10 +434,16 @@ describe('workstate MCP server', () => {
 			],
 			['update_task', 'updateTask', { taskId: 'task1' }, okResult({ task: TASK })],
 			[
+				'add_notice',
+				'addNotice',
+				{ taskId: 'task1', kind: 'caveat', text: 'Flaky test skipped' },
+				okResult({ notice: NOTICE })
+			],
+			[
 				'get_task',
 				'getTask',
 				{ taskId: 'task1' },
-				okResult({ task: TASK, nodes: [STEP_NODE], url: TASK_URL })
+				okResult({ task: TASK, nodes: [STEP_NODE], notices: [], url: TASK_URL })
 			],
 			['configure', 'configure', {}, okResult({ config: CONFIG, projectUrl: `${SERVER}/p/proj1` })]
 		];
@@ -449,6 +468,7 @@ describe('workstate MCP server', () => {
 			['start_task', 'startTask', { title: 'T' }],
 			['update_step', 'updateStep', { taskId: 'task1', path: 'build' }],
 			['update_task', 'updateTask', { taskId: 'task1' }],
+			['add_notice', 'addNotice', { taskId: 'task1', kind: 'caveat', text: 'x' }],
 			['get_task', 'getTask', { taskId: 'task1' }],
 			['configure', 'configure', {}]
 		];

@@ -1,12 +1,13 @@
-import { and, asc, desc, eq, gt, inArray, isNull, max } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, max, ne } from 'drizzle-orm';
 import { ApiError } from '#lib/server/api.ts';
 import { publish } from '#lib/server/bus.ts';
 import { db } from '#lib/server/db/index.ts';
 import { log } from '#lib/server/log.ts';
-import { events, nodes, projects, tasks } from '#lib/server/db/schema.ts';
+import { events, nodes, notices, projects, tasks } from '#lib/server/db/schema.ts';
 import {
 	toEvent,
 	toNode,
+	toNotice,
 	toProject,
 	toTask,
 	type NodeRow,
@@ -15,6 +16,7 @@ import {
 } from '#lib/server/serialize.ts';
 import type {
 	NodeInput,
+	NoticeInput,
 	ProjectPatch,
 	StepInput,
 	TaskInput,
@@ -23,6 +25,7 @@ import type {
 import type {
 	AgentInfo,
 	Node,
+	Notice,
 	Project,
 	ProjectConfig,
 	Snapshot,
@@ -65,7 +68,13 @@ export async function taskEvents(taskId: string, path?: string): Promise<Worksta
 	const rows = await db
 		.select()
 		.from(events)
-		.where(and(eq(events.taskId, taskId), path === undefined ? undefined : eq(events.path, path)))
+		.where(
+			and(
+				eq(events.taskId, taskId),
+				ne(events.type, 'notice'),
+				path === undefined ? undefined : eq(events.path, path)
+			)
+		)
 		.orderBy(asc(events.seq));
 	return rows.map(toEvent);
 }
@@ -95,17 +104,30 @@ export async function snapshot(projectId: string): Promise<Snapshot | undefined>
 				)
 				.orderBy(asc(nodes.taskId), asc(nodes.depth), asc(nodes.position), asc(nodes.path))
 		: [];
+	const noticeRows = taskRows.length
+		? await db
+				.select()
+				.from(notices)
+				.where(
+					inArray(
+						notices.taskId,
+						taskRows.map((task) => task.id)
+					)
+				)
+				.orderBy(asc(notices.createdAt), asc(notices.id))
+		: [];
 	return {
 		project: toProject(project),
 		tasks: taskRows.map(toTask),
 		nodes: nodeRows.map(toNode),
+		notices: noticeRows.map(toNotice),
 		lastSeq: Number(seqRow?.seq ?? 0)
 	};
 }
 
 export async function getTaskWithNodes(
 	taskId: string
-): Promise<{ task: Task; nodes: Node[] } | undefined> {
+): Promise<{ task: Task; nodes: Node[]; notices: Notice[] } | undefined> {
 	const row = await getTaskRow(taskId);
 	if (!row) return undefined;
 	const nodeRows = await db
@@ -113,7 +135,12 @@ export async function getTaskWithNodes(
 		.from(nodes)
 		.where(eq(nodes.taskId, taskId))
 		.orderBy(asc(nodes.depth), asc(nodes.position), asc(nodes.path));
-	return { task: toTask(row), nodes: nodeRows.map(toNode) };
+	const noticeRows = await db
+		.select()
+		.from(notices)
+		.where(eq(notices.taskId, taskId))
+		.orderBy(asc(notices.createdAt), asc(notices.id));
+	return { task: toTask(row), nodes: nodeRows.map(toNode), notices: noticeRows.map(toNotice) };
 }
 
 export async function insertProject(row: typeof projects.$inferInsert): Promise<void> {
@@ -369,6 +396,28 @@ async function taskInProject(ctx: Ctx, taskId: string): Promise<TaskRow | undefi
 		.from(tasks)
 		.where(and(eq(tasks.id, taskId), eq(tasks.projectId, ctx.projectId)));
 	return row;
+}
+
+export async function addNotice(
+	projectId: string,
+	taskId: string,
+	input: NoticeInput
+): Promise<Notice> {
+	return mutate(projectId, async (ctx) => {
+		if (!(await taskInProject(ctx, taskId))) throw new ApiError(404, 'task not found');
+		const row = {
+			id: crypto.randomUUID(),
+			taskId,
+			path: input.path,
+			kind: input.kind,
+			text: input.text,
+			createdAt: ctx.now
+		};
+		await ctx.tx.insert(notices).values(row);
+		const notice = toNotice(row);
+		await ctx.emit('notice', taskId, input.path, notice);
+		return notice;
+	});
 }
 
 export async function createTask(

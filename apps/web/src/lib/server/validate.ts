@@ -2,7 +2,7 @@ import { ApiError } from '#lib/server/api.ts';
 import { COLOR_PATTERN, isObject, validateConfig } from '#lib/server/config.ts';
 import { moniker } from '#lib/server/moniker.ts';
 import { PRESETS } from '#lib/server/presets.ts';
-import type { AgentInfo, Link, ProjectConfig, PullRequest, Tag } from '#lib/types.ts';
+import type { AgentInfo, Link, NoticeKind, ProjectConfig, PullRequest, Tag } from '#lib/types.ts';
 
 const MAX_TEXT = 10_000;
 const MAX_NAME = 255;
@@ -17,6 +17,8 @@ const MAX_REF = 255;
 const MAX_PRS = 10;
 const PR_STATES = ['draft', 'open', 'merged', 'closed'] as const;
 const PR_CHECKS = ['pending', 'passing', 'failing'] as const;
+const NOTICE_KINDS = ['assumption', 'caveat'] as const;
+const MAX_NOTICE = 2000;
 const PR_REVIEWS = ['pending', 'approved', 'changes_requested'] as const;
 
 type Body = Record<string, unknown>;
@@ -51,6 +53,12 @@ export interface TaskPatch {
 export interface TaskInput extends TaskPatch {
 	title: string;
 	steps?: StepInput[];
+}
+
+export interface NoticeInput {
+	kind: NoticeKind;
+	text: string;
+	path: string | null;
 }
 
 export interface ProjectPatch {
@@ -248,6 +256,19 @@ export function parseTaskCreate(body: Body): TaskInput {
 		title,
 		steps: body.steps === undefined ? undefined : parseSteps(body.steps, 'steps', '')
 	});
+}
+
+export function parseNoticeBody(body: Body): NoticeInput {
+	const kind = oneOf(body, 'kind', 'notice', NOTICE_KINDS);
+	if (kind === undefined) throw new ApiError(400, 'kind is required');
+	const noticeText = text(body, 'text', { nonEmpty: true, max: MAX_NOTICE });
+	if (noticeText === undefined) throw new ApiError(400, 'text is required');
+	const path = body.path;
+	if (path !== undefined && typeof path !== 'string') {
+		throw new ApiError(400, 'path must be a string');
+	}
+	if (path !== undefined) parsePath(path);
+	return { kind, text: noticeText, path: path ?? null };
 }
 
 export function parsePath(raw: string | null | undefined): string[] {

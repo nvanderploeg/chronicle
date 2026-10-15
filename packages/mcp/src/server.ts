@@ -222,6 +222,21 @@ export function createServer(
 	);
 
 	server.registerTool(
+		'add_notice',
+		{
+			description:
+				'Flag an assumption you made or a caveat the user should check, so it shows as an alert on the task and in the Notices tab; one notice per call, with `path` when it belongs to a step.',
+			inputSchema: {
+				taskId: z.string(),
+				kind: z.enum(['assumption', 'caveat']),
+				text: z.string().min(1),
+				path: z.string().optional()
+			}
+		},
+		async (args) => respond(await client.addNotice(args))
+	);
+
+	server.registerTool(
 		'update_project',
 		{
 			description:

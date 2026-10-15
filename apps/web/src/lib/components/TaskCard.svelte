@@ -7,6 +7,7 @@
 	import AgentChip from './AgentChip.svelte';
 	import Links from './Links.svelte';
 	import NodeTree from './NodeTree.svelte';
+	import NoticeList from './NoticeList.svelte';
 	import PrChips from './PrChips.svelte';
 	import StateMark from './StateMark.svelte';
 
@@ -18,6 +19,9 @@
 	const stale = $derived(isStale(task, nodes, board.config, board.now));
 	const flashing = $derived(board.finishing.has(task.id));
 	const tokens = $derived(totalTokens(task, nodes));
+	const notices = $derived(board.noticesOf(task.id));
+	const pending = $derived(board.pendingNotices(task.id));
+	let noticesOpen = $state(false);
 	const ref = $derived([task.repo, task.branch].filter(Boolean).join(' @ '));
 </script>
 
@@ -62,6 +66,23 @@
 			No update for {formatElapsed(new Date(latestActivity(task, nodes)).toISOString(), board.now)}
 			— agent may have stopped
 		</p>
+	{/if}
+
+	{#if notices.length}
+		<div class="notice-block">
+			<button
+				type="button"
+				class="notice-alert"
+				class:reviewed={pending === 0}
+				aria-expanded={noticesOpen}
+				data-testid="notice-alert"
+				onclick={() => (noticesOpen = !noticesOpen)}
+			>
+				<span aria-hidden="true">{pending ? '⚠' : '✓'}</span>
+				Notices
+			</button>
+			{#if noticesOpen}<NoticeList {notices} />{/if}
+		</div>
 	{/if}
 
 	<div class="steps">
@@ -186,6 +207,37 @@
 		color: var(--muted);
 		font-size: 0.9rem;
 		font-style: italic;
+	}
+
+	.notice-block {
+		display: grid;
+		gap: 0.6rem;
+		margin-top: 0.8rem;
+	}
+
+	.notice-alert {
+		justify-self: start;
+		padding: 0.25rem 0.8rem;
+		border: 1.5px solid #eab308;
+		border-radius: 999px;
+		background: color-mix(in srgb, #eab308 18%, var(--panel));
+		color: var(--ink);
+		font: inherit;
+		font-size: 0.88rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.notice-alert.reviewed {
+		border-color: var(--line);
+		background: var(--panel-2);
+		color: var(--muted);
+		font-weight: 500;
+	}
+
+	.notice-alert:focus-visible {
+		outline: 2px solid var(--ink);
+		outline-offset: 2px;
 	}
 
 	.steps {

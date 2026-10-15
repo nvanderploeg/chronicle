@@ -78,6 +78,21 @@ export const nodes = mysqlTable(
 	(table) => [primaryKey({ columns: [table.taskId, table.path] })]
 );
 
+export const notices = mysqlTable(
+	'notices',
+	{
+		id: varchar('id', { length: 36 }).primaryKey(),
+		taskId: varchar('task_id', { length: 36 })
+			.notNull()
+			.references(() => tasks.id, { onDelete: 'cascade' }),
+		path: varchar('path', { length: 512 }),
+		kind: varchar('kind', { length: 16 }).notNull(),
+		text: text('text').notNull(),
+		createdAt: now('created_at')
+	},
+	(table) => [index('notices_task_created_idx').on(table.taskId, table.createdAt)]
+);
+
 export const events = mysqlTable(
 	'events',
 	{

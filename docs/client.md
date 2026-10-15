@@ -96,7 +96,15 @@ export interface WorkstateClient {
 		notes?: string;
 		links?: Link[];
 	}): Promise<Result<{ project: Project; projectUrl: string }>>;
-	getTask(input: { taskId: string }): Promise<Result<{ task: Task; nodes: Node[]; url: string }>>;
+	addNotice(input: {
+		taskId: string;
+		kind: NoticeKind;
+		text: string;
+		path?: string;
+	}): Promise<Result<{ notice: Notice }>>;
+	getTask(input: {
+		taskId: string;
+	}): Promise<Result<{ task: Task; nodes: Node[]; notices: Notice[]; url: string }>>;
 	configure(input: {
 		taskId?: string;
 		cwd?: string;
@@ -119,7 +127,7 @@ Behaviour:
 
 - **discover** — server URLs are normalised by trimming whitespace and trailing `/`. `WORKSTATE_URL` set and non-empty → probe it alone; healthy → it, else `null`; the candidates are never tried. Otherwise the first healthy candidate in order, else `null`. Healthy = `GET <server>/api/health` answers 2xx with JSON `service === 'workstate'` within `probeTimeoutMs` when the host is loopback (`localhost`, `*.localhost`, `127.*`, `[::1]`), else within `remoteProbeTimeoutMs`.
 - **startTask** — `discover()`; `null` → `{ ok: false, warning: UNREACHABLE_WARNING }`. Look up `projects.json[server][repoKey]`; absent → `POST /api/projects` with `{ name: project }` when `project` is given, else `{}`, and save the entry with the returned `name` and `url` as `projectUrl` (`createdProject: true`). Present with a `name` other than a given `project` → `PATCH /api/projects/:id { name }` and save the new name; a failed rename is ignored. Then `POST /api/projects/:id/tasks` with `Authorization: Bearer <writeKey>`, body `{ title, summary, state, note, steps, agent, links, repo, branch }` (omit undefined fields). `repo` and `branch` default to `gitRefs(cwd)`; `agent.tool` defaults to `'claude-code'` when `env.CLAUDECODE === '1'`. If that answers 401, 403 or 404, create a fresh project, overwrite the registry entry, and retry once (`createdProject: true`). Save `tasks.json[taskId] = { server, projectId, projectUrl }`.
-- **updateStep / updateTask / getTask** — need `tasks.json[taskId]`; absent → `{ ok: false, warning: 'unknown task <taskId> on this machine — continuing untracked' }`. The write key is the `projects.json[handle.server]` entry whose `projectId` matches. They use `handle.server` only — no discovery. Each path segment is URI-encoded; `/` separators are kept. `getTask`'s `url` = `${projectUrl}/t/${taskId}`.
+- **updateStep / updateTask / addNotice / getTask** — need `tasks.json[taskId]`; absent → `{ ok: false, warning: 'unknown task <taskId> on this machine — continuing untracked' }`. The write key is the `projects.json[handle.server]` entry whose `projectId` matches. They use `handle.server` only — no discovery. Each path segment is URI-encoded; `/` separators are kept. `getTask`'s `url` = `${projectUrl}/t/${taskId}`, and its `notices` is `[]` when the server sends none. `addNotice` is `POST /api/tasks/:taskId/notices` with `{ kind, text, path }`.
 - **configure / projectUrl / updateProject** — the project comes from the `taskId` handle when given, else from `projects.json[discover()][repoKey(cwd)]`. Neither → `{ ok: false, warning: 'no workstate project for this repo yet — start a task first' }`. Every returned link starts with the project's `projectUrl` from the handle or registry entry, else `${server}/p/${projectId}`.
 - **Rate limit** — a 429 whose `Retry-After` is at most 5 s is waited out and the request sent once more; a longer or missing one is reported like any other rejection.
 - **Failures** — network error, timeout (`requestTimeoutMs`) or 5xx → `UNREACHABLE_WARNING`. Other non-2xx → `workstate rejected the update: <error>`, plus ` (valid states: a, b, c)` when the body has `validStates`. Methods never throw or reject.
@@ -160,6 +168,7 @@ workstate doctor [--cwd dir]
 - agent = `[--tool t] [--model m] [--effort e] [--tokens n]`, sent as `agent` when any is given; `--tokens` must be a non-negative integer.
 - `--pr url` (repeatable, `start` and `task`) → `prs: [{ url }]`.
 - `--step key=Title` without `=Title` → title omitted. `--step a/b=B` nests `b` in `a`'s `subtasks`, creating `a` (title omitted) when no `--step a` came first. `--link "url|label"` → `{ url, label }`; no `|` → url only. `--tag "round 2|#a855f7"` → `{ text: 'round 2', color: '#a855f7' }`; no `|` → text only. `--color in_work=#14b8a6` → patch `states: [{ key: 'in_work', color: '#14b8a6' }]`. `--position` must be an integer (`--position=-1` for a negative one).
+- `workstate notice <taskId> <assumption|caveat> <text> [--path p]` → `addNotice`; any other kind is a usage error.
 - A `Result` with `ok: false` → stderr `workstate: <warning>` and exit 0.
 - Unknown command, missing positional, or bad flag → usage text on stderr, exit 2.
 
@@ -173,6 +182,7 @@ workstate doctor [--cwd dir]
 | `update_step` | `{ taskId, path, title?, state?, note?, tags?: Tag[], agent?, links?, position? }`   | `updateStep` |
 | `update_task` | `{ taskId, title?, summary?, state?, note?, agent?, links?, prs? }`                  | `updateTask` |
 | `update_project` | `{ taskId?, cwd?, name?, notes?, links? }`                                        | `updateProject` |
+| `add_notice`  | `{ taskId, kind: 'assumption' \| 'caveat', text, path? }`              | `addNotice`  |
 | `get_task`    | `{ taskId }`                                                          | `getTask`    |
 | `configure`   | `{ taskId?, cwd?, config?: ProjectConfig, patch?: ConfigPatch }`      | `configure`  |
 

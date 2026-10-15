@@ -20,7 +20,8 @@ export const load: PageServerLoad = async ({ params }) => {
 		snapshot: {
 			...result,
 			tasks: [task],
-			nodes: result.nodes.filter((n) => n.taskId === taskId)
+			nodes: result.nodes.filter((n) => n.taskId === taskId),
+			notices: result.notices.filter((n) => n.taskId === taskId)
 		},
 		taskId,
 		now: Date.now()

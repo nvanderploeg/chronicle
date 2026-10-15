@@ -99,6 +99,17 @@ export interface Node {
 	stateSince: string;
 }
 
+export type NoticeKind = 'assumption' | 'caveat';
+
+export interface Notice {
+	id: string;
+	taskId: string;
+	path: string | null;
+	kind: NoticeKind;
+	text: string;
+	createdAt: string;
+}
+
 export interface ClientOptions {
 	env?: Record<string, string | undefined>;
 	configDir?: string;
@@ -187,7 +198,15 @@ export interface WorkstateClient {
 		notes?: string;
 		links?: Link[];
 	}): Promise<Result<{ project: Project; projectUrl: string }>>;
-	getTask(input: { taskId: string }): Promise<Result<{ task: Task; nodes: Node[]; url: string }>>;
+	addNotice(input: {
+		taskId: string;
+		kind: NoticeKind;
+		text: string;
+		path?: string;
+	}): Promise<Result<{ notice: Notice }>>;
+	getTask(input: {
+		taskId: string;
+	}): Promise<Result<{ task: Task; nodes: Node[]; notices: Notice[]; url: string }>>;
 	configure(input: {
 		taskId?: string;
 		cwd?: string;

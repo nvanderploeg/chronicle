@@ -11,6 +11,7 @@ import type {
 	ClientOptions,
 	DoctorReport,
 	Node,
+	Notice,
 	Project,
 	ProjectConfig,
 	Result,
@@ -365,20 +366,36 @@ export function createClient(options: ClientOptions = {}): WorkstateClient {
 				return reply.ok ? { ok: true, value: { project: reply.body.project, projectUrl } } : reply;
 			}),
 
+		addNotice: (input) =>
+			guard(async () => {
+				const target = await writeTarget(input.taskId);
+				if (!target.ok) return target;
+				const { server, key } = target.value;
+				const reply = await send<{ notice: Notice }>(server, `${taskPath(input.taskId)}/notices`, {
+					method: 'POST',
+					key,
+					body: compact({ kind: input.kind, text: input.text, path: input.path })
+				});
+				return reply.ok ? { ok: true, value: { notice: reply.body.notice } } : reply;
+			}),
+
 		getTask: (input) =>
 			guard(async () => {
 				const target = await targetFromTask(input.taskId);
 				if (!target.ok) return target;
 				const { server, projectUrl } = target.value;
-				const reply = await send<{ task: Task; nodes: Node[] }>(server, taskPath(input.taskId), {
-					method: 'GET'
-				});
+				const reply = await send<{ task: Task; nodes: Node[]; notices?: Notice[] }>(
+					server,
+					taskPath(input.taskId),
+					{ method: 'GET' }
+				);
 				if (!reply.ok) return reply;
 				return {
 					ok: true,
 					value: {
 						task: reply.body.task,
 						nodes: reply.body.nodes,
+						notices: reply.body.notices ?? [],
 						url: `${projectUrl}/t/${input.taskId}`
 					}
 				};

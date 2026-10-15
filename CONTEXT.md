@@ -31,6 +31,9 @@ A key from the Project's Config, set on a Task or Node. Its label, color, icon a
 **Kind**:
 The meaning of a State: `pending`, `active`, `review`, `blocked`, `failed` or `done`. Behaviour (finished, stale, settled) keys off Kind, never off the State key.
 
+**Notice**:
+An assumption or caveat an agent flags on a Task, or on one of its Nodes by Path. Append-only. A viewer marks each one approved or flagged in their own browser; the server holds no review state.
+
 **Tag**:
 Short colored text attached to a Node, such as `round 2`.
 

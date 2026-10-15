@@ -26,6 +26,7 @@ const USAGE = `usage:
   workstate step <taskId> <path> [state] [--title t] [--note n] [--tag text[|color]]... [--position n]
                   [agent] [--link url[|label]]...
   workstate task <taskId> [state] [--title t] [--summary s] [--note n] [agent] [--link url[|label]]... [--pr url]...
+  workstate notice <taskId> <assumption|caveat> <text> [--path p]
   workstate sync [--task id]...
   workstate project [--name n] [--notes s] [--link url[|label]]... [--task id] [--cwd dir]
   workstate get <taskId>
@@ -247,6 +248,20 @@ export async function run(argv: string[], io: RunIo): Promise<number> {
 					prs: values.pr?.map((url) => ({ url }))
 				});
 				return finish(result, (v) => `${v.task.id} ${v.task.state}`);
+			}
+			case 'notice': {
+				const { values, positionals } = parse(rest, { path: { type: 'string' } }, [3, 3]);
+				const kind = positionals[1];
+				if (kind !== 'assumption' && kind !== 'caveat') {
+					throw new UsageError(`bad notice kind: ${kind}`);
+				}
+				const result = await client.addNotice({
+					taskId: positionals[0],
+					kind,
+					text: positionals[2],
+					path: values.path
+				});
+				return finish(result, (v) => `${v.notice.id} ${v.notice.kind}`);
 			}
 			case 'sync': {
 				const { values } = parse(rest, { task: { type: 'string', multiple: true } }, [0, 0]);
