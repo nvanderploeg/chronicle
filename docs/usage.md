@@ -40,8 +40,8 @@ as `skip`.
 
 | Where                                        | What                                                                              |
 | -------------------------------------------- | --------------------------------------------------------------------------------- |
-| `~/.agents/skills/chronicle`, `.../build-it` | Symlinks to this checkout's `skills/`.                                            |
-| `~/.claude/skills/chronicle`, `.../build-it` | Symlinks to the `~/.agents/skills` entries.                                       |
+| `~/.agents/skills/chronicle`                 | Symlink to this checkout's `skills/chronicle`.                                    |
+| `~/.claude/skills/chronicle`                 | Symlink to the `~/.agents/skills` entry.                                          |
 | `~/.local/bin/chronicle`                     | Symlink to the built CLI. Add `~/.local/bin` to `PATH` if the installer warns.    |
 | Claude Code user config                      | `claude mcp add -s user chronicle -- node <checkout>/packages/mcp/dist/index.js`. |
 | `~/.codex/config.toml`                       | A `[mcp_servers.chronicle]` block (only if `codex` is on `PATH`).                 |
@@ -135,10 +135,10 @@ chronicle doctor
 
 `start` prints `<taskId> <url>`. A state change clears the note unless you pass `--note`.
 
-### With build-it
+### With an orchestrator
 
-When the `chronicle` skill or MCP tools are available, the `build-it` skill mirrors its run onto the
-dashboard (its "Track it" section): chunks become steps with `deps:` tags, prework and workers move
+When the `chronicle` skill or MCP tools are available, an orchestrating skill can mirror its run onto the
+dashboard: chunks become steps with `deps:` tags, prework and workers move
 them through planning and in work, a parallel test agent becomes `chunk-N/tests`, a repair round
 adds `round 2` and `opus` tags, a one-way-door Stop sets the step and task to `needs_input` with the
 question as the note, and the commit sets `done` with `<short sha> <subject>`. The dashboards above
@@ -326,7 +326,7 @@ apps/web/        SvelteKit app: dashboard pages, HTTP API, SSE stream, MySQL via
 packages/client/ discovery, registry files and HTTP calls (@chronicle/client)
 packages/cli/    the chronicle command
 packages/mcp/    the chronicle-mcp stdio server
-skills/          the chronicle and build-it agent skills
+skills/          the chronicle agent skill
 scripts/         install, uninstall, simulate, captures
 e2e/             Playwright capture suite
 docs/            contracts (api.md, client.md, ui.md) and captures/

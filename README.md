@@ -5,7 +5,7 @@ Follow your agents' work progress live.
 chronicle is a live dashboard for agent work. An agent reports a multi-step task (steps, nested
 subtasks, a color-coded state on every node) to a project page, and anyone with the link watches it
 update over server-sent events. Agents write through an MCP server or a CLI; the web page is
-view-only. It is built for runs like [`build-it`](skills/build-it/SKILL.md): a plan split into
+view-only. It is built for orchestrated build runs: a plan split into
 chunks, workers and reviewers running in parallel, and a person who wants to see where it is
 without reading a transcript.
 
@@ -43,7 +43,7 @@ scripts/install.sh --with-server
 chronicle doctor
 ```
 
-This builds the packages, links the `chronicle` and `build-it` skills and the CLI, registers the MCP
+This builds the packages, links the `chronicle` skill and the CLI, registers the MCP
 server with Claude Code (and Codex if present), and starts the tracker on <http://localhost:3280>.
 It is safe to re-run; `scripts/uninstall.sh` removes exactly what it added.
 
