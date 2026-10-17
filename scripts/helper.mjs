@@ -66,6 +66,16 @@ function indentOf(raw) {
 	return raw.match(/^([ \t]+)"/m)?.[1] ?? 2;
 }
 
+// Each Claude Code hook event `chronicle hook` answers, with its matcher.
+const HOOK_EVENTS = [
+	['SessionStart', 'compact|resume'],
+	['UserPromptSubmit', undefined],
+	['PreToolUse', 'Agent'],
+	['PostToolUse', undefined]
+];
+
+const hasCommand = (group, command) => group.hooks?.some((h) => h.command === command);
+
 const commands = {
 	'manifest-add'([kind, repo, p, target]) {
 		const entry = { kind, repo };
@@ -119,6 +129,57 @@ const commands = {
 		if (settings.permissions.allow.length === 0) delete settings.permissions.allow;
 		if (Object.keys(settings.permissions).length === 0) delete settings.permissions;
 		writeAtomic(file, JSON.stringify(settings, null, indentOf(existing.raw)) + '\n', 0o644);
+		console.log('removed');
+	},
+
+	'hooks-add'([file, command]) {
+		const existing = readJson(file);
+		const settings = existing?.value ?? {};
+		const hooks = (settings.hooks ??= {});
+		let added = false;
+		for (const [event, matcher] of HOOK_EVENTS) {
+			const groups = (hooks[event] ??= []);
+			if (groups.some((g) => hasCommand(g, command))) continue;
+			groups.push({ ...(matcher ? { matcher } : {}), hooks: [{ type: 'command', command }] });
+			added = true;
+		}
+		if (!added) return console.log('present\t-');
+		let backup = '-';
+		if (existing) {
+			backup = `${file}.bak-${timestamp()}`;
+			fs.copyFileSync(file, backup);
+		}
+		writeAtomic(
+			file,
+			JSON.stringify(settings, null, existing ? indentOf(existing.raw) : 2) + '\n',
+			0o644
+		);
+		console.log(`added\t${backup}`);
+	},
+
+	'hooks-remove'([file, command]) {
+		const existing = readJson(file);
+		const hooks = existing?.value.hooks;
+		if (!hooks || typeof hooks !== 'object') return console.log('absent');
+		let removed = false;
+		for (const [event, groups] of Object.entries(hooks)) {
+			if (!Array.isArray(groups)) continue;
+			const kept = [];
+			for (const group of groups) {
+				if (!hasCommand(group, command)) {
+					kept.push(group);
+					continue;
+				}
+				removed = true;
+				const rest = group.hooks.filter((h) => h.command !== command);
+				if (rest.length > 0) kept.push({ ...group, hooks: rest });
+			}
+			if (kept.length > 0) hooks[event] = kept;
+			else delete hooks[event];
+		}
+		if (!removed) return console.log('absent');
+		if (Object.keys(hooks).length === 0) delete existing.value.hooks;
+		writeAtomic(file, JSON.stringify(existing.value, null, indentOf(existing.raw)) + '\n', 0o644);
 		console.log('removed');
 	},
 

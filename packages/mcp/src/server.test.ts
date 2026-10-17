@@ -3,7 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { ChronicleClient } from '@chronicle/client';
-import { createServer, type WatchOptions } from './server.ts';
+import { createServer, type Opener, type WatchOptions } from './server.ts';
 
 type Method =
 	| 'discover'
@@ -115,9 +115,10 @@ afterEach(async () => {
 async function connect(
 	client: FakeClient = fakeClient(),
 	clientName = 'test-agent',
-	watch: WatchOptions = { intervalMs: 0 }
+	watch: WatchOptions = { intervalMs: 0 },
+	open: Opener = vi.fn()
 ) {
-	const server = createServer(client as unknown as ChronicleClient, watch);
+	const server = createServer(client as unknown as ChronicleClient, watch, open);
 	const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 	const mcp = new Client({ name: clientName, version: '0.0.0' });
 	await server.connect(serverTransport);
@@ -524,6 +525,51 @@ describe('chronicle MCP server', () => {
 				expect(client[method]).not.toHaveBeenCalled();
 			}
 		);
+	});
+});
+
+describe('dashboard opener', () => {
+	it('opens the task url once start_task succeeds', async () => {
+		const client = fakeClient();
+		client.startTask.mockResolvedValueOnce(
+			okResult({
+				taskId: 'task1',
+				url: TASK_URL,
+				server: SERVER,
+				projectId: 'proj1',
+				projectUrl: `${SERVER}/p/proj1`,
+				createdProject: false
+			})
+		);
+		const open = vi.fn();
+		const { mcp } = await connect(client, 'test-agent', { intervalMs: 0 }, open);
+
+		await mcp.callTool({ name: 'start_task', arguments: { title: 'T' } });
+
+		expect(open).toHaveBeenCalledExactlyOnceWith(TASK_URL);
+	});
+
+	it('opens nothing when start_task returns a warning', async () => {
+		const client = fakeClient();
+		client.startTask.mockResolvedValueOnce(
+			notOkResult('chronicle unreachable — continuing untracked')
+		);
+		const open = vi.fn();
+		const { mcp } = await connect(client, 'test-agent', { intervalMs: 0 }, open);
+
+		await mcp.callTool({ name: 'start_task', arguments: { title: 'T' } });
+
+		expect(open).not.toHaveBeenCalled();
+	});
+
+	it('opens nothing on later writes to the task', async () => {
+		const open = vi.fn();
+		const { mcp } = await connect(fakeClient(), 'test-agent', { intervalMs: 0 }, open);
+
+		await mcp.callTool({ name: 'update_step', arguments: { taskId: 'task1', path: 'a' } });
+		await mcp.callTool({ name: 'update_task', arguments: { taskId: 'task1', state: 'done' } });
+
+		expect(open).not.toHaveBeenCalled();
 	});
 });
 

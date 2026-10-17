@@ -5,6 +5,7 @@ REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 HELPER="$REPO/scripts/helper.mjs"
 MCP_BIN="$REPO/packages/mcp/dist/index.js"
 ALLOW_ENTRY='mcp__chronicle__*'
+HOOK_COMMAND="node \"$REPO/packages/cli/dist/index.js\" hook"
 HOME_DIR=${HOME:?HOME must be set}
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME_DIR/.config}/chronicle"
 MANIFEST="$CONFIG_DIR/install.json"
@@ -17,7 +18,7 @@ Usage: scripts/uninstall.sh [options]
 
 Removes what scripts/install.sh recorded in install.json for this checkout:
 skill and CLI links that still point where install put them, MCP registrations
-install added, and the tool allowlist entry install added.
+install added, and the tool allowlist entry and hooks install added.
 
   --purge      also delete projects.json and tasks.json (the project registry)
   --dry-run    print what would happen without changing anything
@@ -29,7 +30,7 @@ USAGE
 
 say() {
 	if [ "$dry" = 1 ]; then
-		case $1 in remove | mcp | allow | purge) set -- would "$1: $2" ;; esac
+		case $1 in remove | mcp | allow | hooks | purge) set -- would "$1: $2" ;; esac
 	fi
 	printf '%-6s %s\n' "$1" "$2"
 }
@@ -138,6 +139,22 @@ remove_allow() {
 	report_backups "$settings"
 }
 
+remove_hooks() {
+	local settings=$1 result
+	if [ "$dry" = 1 ]; then
+		say hooks "remove chronicle hooks from $settings"
+		return
+	fi
+	result=$(node "$HELPER" hooks-remove "$settings" "$HOOK_COMMAND")
+	if [ "$result" = removed ]; then
+		say hooks "removed chronicle hooks from $settings"
+	else
+		say ok "chronicle hooks already absent from $settings"
+	fi
+	forget hooks "$REPO" "$settings"
+	report_backups "$settings"
+}
+
 if [ ! -f "$MANIFEST" ]; then
 	say ok "nothing recorded at $MANIFEST"
 else
@@ -150,6 +167,7 @@ else
 			claude-mcp) remove_claude_mcp ;;
 			codex-mcp) remove_codex_mcp "$path" ;;
 			allow) remove_allow "$path" ;;
+			hooks) remove_hooks "$path" ;;
 			server)
 				say note "tracker left running with its data; stop it with 'docker compose down' in $REPO"
 				forget server "$REPO" -

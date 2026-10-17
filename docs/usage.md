@@ -30,6 +30,7 @@ local tracker on <http://localhost:3280> and waits for it to be healthy. It is s
 | `--with-server` | Run `docker compose up -d` (MySQL and the app) and wait for `http://localhost:3280/api/health`.                         |
 | `--replace`     | Move conflicting paths aside to `<name>.bak-<timestamp>` and re-register the MCP server, instead of skipping them.      |
 | `--allow-tools` | Add `mcp__chronicle__*` to `permissions.allow` in `~/.claude/settings.json`, so Claude Code stops asking for each tool. |
+| `--hooks`       | Add Claude Code hooks to `~/.claude/settings.json` that keep a session's chronicle task current once chronicle is in use (see below). |
 | `--skip-mcp`    | Do not register the MCP server with Claude Code or Codex (skills and CLI are still linked).                             |
 | `--dry-run`     | Print what would happen and change nothing.                                                                             |
 
@@ -46,7 +47,21 @@ as `skip`.
 | Claude Code user config                      | `claude mcp add -s user chronicle -- node <checkout>/packages/mcp/dist/index.js`. |
 | `~/.codex/config.toml`                       | A `[mcp_servers.chronicle]` block (only if `codex` is on `PATH`).                 |
 | `~/.config/chronicle/install.json`           | A manifest of the above, so uninstall removes exactly what install added.         |
-| `~/.claude/settings.json`                    | Only with `--allow-tools`; the original is backed up first.                       |
+| `~/.claude/settings.json`                    | Only with `--allow-tools` or `--hooks`; the original is backed up first.          |
+
+### Hooks
+
+With `--hooks`, Claude Code runs `chronicle hook` on four events. A session that never loads chronicle hears nothing from them. Once it does, they keep the task in front of the agent; they never block work, except to return a subagent launch once (below).
+
+| Situation | What the agent is told |
+| --- | --- |
+| Loaded the skill or the tools, no `start_task` yet | Start the task and print its link, before more work. On the first three tool calls, then every fifth, and on each prompt. |
+| Task open, a user prompt arrives | The task id and link; keep it current, finish with `update_task`. |
+| Task open, 12 tool calls with no chronicle write | No update in 12 calls; update the step or finish the task. |
+| Task open, context compacted or session resumed | The task id and link; call `get_task` before writing. |
+| Task open, a subagent brief without the task id | The launch is returned once with the line to add; the same brief sent again goes through. |
+
+A task set to `done`, `failed`, `needs_input` or `review` silences them until it is reopened; so does a `start_task` that warns the server is unreachable. State lives in `~/.config/chronicle/sessions/<session id>.json` and is pruned after two weeks.
 
 The checkout is referenced in place, not copied. Do not move it after installing; re-run the
 installer if you do.

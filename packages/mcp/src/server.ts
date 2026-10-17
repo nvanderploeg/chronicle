@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
@@ -91,6 +92,26 @@ function respond<T>(result: Result<T>): CallToolResult {
 	return { content: [{ type: 'text', text }] };
 }
 
+export type Opener = (url: string) => void;
+
+// Fire and forget: a missing opener or display must never surface to the agent.
+export function openInBrowser(url: string): void {
+	if (process.env.CHRONICLE_OPEN === '0') return;
+	const [cmd, args] =
+		process.platform === 'darwin'
+			? ['open', [url]]
+			: process.platform === 'win32'
+				? ['cmd', ['/c', 'start', '', url]]
+				: ['xdg-open', [url]];
+	try {
+		const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+		child.on('error', () => {});
+		child.unref();
+	} catch {
+		// tracking is best effort
+	}
+}
+
 export interface WatchOptions {
 	intervalMs?: number;
 	soonMs?: number;
@@ -136,7 +157,8 @@ export function createServer(
 	client: ChronicleClient = createClient(),
 	watch: WatchOptions = {
 		intervalMs: Number(process.env.CHRONICLE_PR_SYNC_MS ?? 180_000)
-	}
+	},
+	open: Opener = openInBrowser
 ): McpServer {
 	const server = new McpServer({ name: 'chronicle', version: '0.1.0' });
 	const watcher = createWatcher(client, watch);
@@ -150,7 +172,7 @@ export function createServer(
 		'start_task',
 		{
 			description:
-				"Start tracking a multi-step task on this repo's chronicle dashboard and return its url; print that url to the user as soon as work starts and try once to open it in their browser. List every known step, with known subtasks under `subtasks`, so the plan shows up front.",
+				"Start tracking a multi-step task on this repo's chronicle dashboard, before any research or other work, and return its url; the server opens it in the user's browser, and you print it to the user as a link in your next message. List every known step, with known subtasks under `subtasks`, so the plan shows up front.",
 			inputSchema: {
 				title: z.string(),
 				summary: z.string().optional(),
@@ -173,6 +195,7 @@ export function createServer(
 			const tool = args.agent?.tool ?? toolFromClient(server.server.getClientVersion()?.name);
 			const withTool: AgentInfo | undefined = tool ? { ...args.agent, tool } : args.agent;
 			const result = await client.startTask(withTool ? { ...args, agent: withTool } : args);
+			if (result.ok) open(result.value.url);
 			if (result.ok && args.prs?.length) watcher.soon(result.value.taskId);
 			return respond(result);
 		}

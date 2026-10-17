@@ -10,7 +10,8 @@ HOME_DIR=${HOME:?HOME must be set}
 CODEX_CONFIG="${CODEX_HOME:-$HOME_DIR/.codex}/config.toml"
 PORT=${CHRONICLE_PORT:-3280}
 
-replace=0 dry=0 with_server=0 allow_tools=0 skip_mcp=0
+HOOK_COMMAND="node \"$CLI_BIN\" hook"
+replace=0 dry=0 with_server=0 allow_tools=0 skip_mcp=0 hooks=0
 stamp=$(date +%Y%m%d%H%M%S)
 
 usage() {
@@ -24,6 +25,8 @@ Safe to re-run; existing paths that are not ours are skipped.
                   re-register the MCP server instead of skipping
   --with-server   start the local tracker (docker compose up -d) and wait for it
   --allow-tools   add "mcp__chronicle__*" to permissions.allow in ~/.claude/settings.json
+  --hooks         add Claude Code hooks to ~/.claude/settings.json that keep a
+                  session's chronicle task current once chronicle is in use
   --skip-mcp      do not register the MCP server with Claude Code or Codex
   --dry-run       print what would happen without changing anything
   -h, --help      show this help
@@ -48,6 +51,7 @@ while [ $# -gt 0 ]; do
 		--replace) replace=1 ;;
 		--with-server) with_server=1 ;;
 		--allow-tools) allow_tools=1 ;;
+		--hooks) hooks=1 ;;
 		--skip-mcp) skip_mcp=1 ;;
 		--dry-run) dry=1 ;;
 		-h | --help)
@@ -233,6 +237,24 @@ allow_mcp_tools() {
 	fi
 }
 
+add_hooks() {
+	local settings="$HOME_DIR/.claude/settings.json"
+	if [ "$dry" = 1 ]; then
+		say dry "add chronicle hooks ($HOOK_COMMAND) to $settings"
+		return
+	fi
+	local result backup
+	IFS=$'\t' read -r result backup < <(node "$HELPER" hooks-add "$settings" "$HOOK_COMMAND") ||
+		die "could not update $settings"
+	if [ "$result" = added ]; then
+		record hooks "$REPO" "$settings"
+		[ "$backup" = - ] || say ok "backed up settings to $backup"
+		say hooks "added chronicle hooks to $settings"
+	else
+		say ok "chronicle hooks already in $settings"
+	fi
+}
+
 check_tools
 build
 install_skills
@@ -245,4 +267,5 @@ fi
 link_cli
 [ "$with_server" = 0 ] || start_server
 [ "$allow_tools" = 0 ] || allow_mcp_tools
+[ "$hooks" = 0 ] || add_hooks
 say done "chronicle installed from $REPO"

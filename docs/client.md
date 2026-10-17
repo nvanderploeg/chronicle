@@ -163,6 +163,8 @@ chronicle url [taskId] [--cwd dir]
     stdout: the task URL with a taskId, else the project URL
 chronicle doctor [--cwd dir]
     stdout: human-readable DoctorReport
+chronicle hook
+    reads one Claude Code hook event on stdin; stdout: hook JSON or nothing; always exit 0
 ```
 
 - agent = `[--tool t] [--model m] [--effort e] [--tokens n]`, sent as `agent` when any is given; `--tokens` must be a non-negative integer.
@@ -170,11 +172,12 @@ chronicle doctor [--cwd dir]
 - `--step key=Title` without `=Title` → title omitted. `--step a/b=B` nests `b` in `a`'s `subtasks`, creating `a` (title omitted) when no `--step a` came first. `--link "url|label"` → `{ url, label }`; no `|` → url only. `--tag "round 2|#a855f7"` → `{ text: 'round 2', color: '#a855f7' }`; no `|` → text only. `--color in_work=#14b8a6` → patch `states: [{ key: 'in_work', color: '#14b8a6' }]`. `--position` must be an integer (`--position=-1` for a negative one).
 - `chronicle notice <taskId> <assumption|caveat> <text> [--path p]` → `addNotice`; any other kind is a usage error.
 - A `Result` with `ok: false` → stderr `chronicle: <warning>` and exit 0.
+- `hook` (`src/hook.ts`) never touches the server. It keeps per-session state in `<configDir>/sessions/<session_id>.json` and answers `SessionStart` (`compact`, `resume`), `UserPromptSubmit`, `PreToolUse` on `Agent` and `PostToolUse` as `docs/usage.md` § Hooks describes. Unparseable input, a missing `session_id` or any failure → no output.
 - Unknown command, missing positional, or bad flag → usage text on stderr, exit 2.
 
 ## `chronicle-mcp` (`packages/mcp`)
 
-`src/server.ts` exports `createServer(client?: ChronicleClient): McpServer` (from `@modelcontextprotocol/sdk`), server name `chronicle`. `src/index.ts` connects it over stdio. Tools, with zod input schemas mirroring the client inputs:
+`src/server.ts` exports `createServer(client?: ChronicleClient, watch?: WatchOptions, open?: Opener): McpServer` (from `@modelcontextprotocol/sdk`), server name `chronicle`. `src/index.ts` connects it over stdio. Tools, with zod input schemas mirroring the client inputs:
 
 | Tool          | Input                                                                 | Client call  |
 | ------------- | --------------------------------------------------------------------- | ------------ |
@@ -190,4 +193,5 @@ chronicle doctor [--cwd dir]
 - `ok: false` → one text content item, `chronicle: <warning>`. Never `isError`.
 - **PR watcher** — `createServer(client, { intervalMs, soonMs })`: `syncPrs()` once `soonMs` (default 5 s) after start, then every `intervalMs` (default `CHRONICLE_PR_SYNC_MS` or 180 000; `0` disables), and `syncPrs({ taskIds: [id] })` `soonMs` after a `start_task` or `update_task` that sent `prs`. One sync at a time; timers are unref'd and stopped on close; every failure is swallowed.
 - `start_task` without `agent.tool` fills it from the MCP client's reported name: one containing `claude` → `claude-code`, `codex` → `codex`, anything else → left unset.
-- Each tool has a one-sentence description an agent can act on; `start_task`'s says to print the returned `url` as soon as work starts and try once to open it in a browser.
+- **Opener** — `createServer(client, watch, open)`: after a `start_task` that returns `ok`, call `open(url)` once. The default spawns `open` (macOS), `cmd /c start` (Windows) or `xdg-open`, detached with output discarded, and does nothing when `CHRONICLE_OPEN=0`; every failure is swallowed.
+- Each tool has a one-sentence description an agent can act on; `start_task`'s says to call it before any research or other work, that the server opens the `url`, and to print the `url` to the user.
