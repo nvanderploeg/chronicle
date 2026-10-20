@@ -150,6 +150,7 @@ Node upsert semantics:
 
 - Create when absent; update when present. `title` defaults to `key` on create.
 - Missing ancestors are created first (title = key, state = initialState), each with its own event.
+- A write that leaves a node in an `active`-kind state moves its task to the first `active` state when the task is in a `pending`-kind state (one extra task event).
 - `position` given → set; omitted on create → `1 + max(position)` among siblings (0 when first); omitted on update → unchanged.
 - `tags` and `links` given → replace the array; omitted → unchanged.
 - `agent` given → its fields merge into the stored object; omitted → unchanged. Tasks follow the same rule.

@@ -286,7 +286,7 @@ describe('createProjectStream', () => {
 		const { id, writeKey, taskId } = await seed();
 
 		const c = await openStream(id, { idleMs: 5000, heartbeatMs: 10_000 });
-		await putNode(taskId, writeKey, 'a', { state: 'in_work', note: 'half way' });
+		await putNode(taskId, writeKey, 'a', { state: 'needs_input', note: 'half way' });
 
 		expect(await c.waitFor((frames) => eventFrames(frames).length >= 1, 1000)).toBe(true);
 		await settle(c, 30);
@@ -295,7 +295,7 @@ describe('createProjectStream', () => {
 		expect(payloadOf(frames[0])).toMatchObject({
 			taskId,
 			path: 'a',
-			state: 'in_work',
+			state: 'needs_input',
 			note: 'half way'
 		});
 	});
@@ -305,8 +305,8 @@ describe('createProjectStream', () => {
 		const projectB = await seed();
 
 		const c = await openStream(projectA.id, { idleMs: 5000, heartbeatMs: 10_000 });
-		await putNode(projectB.taskId, projectB.writeKey, 'a', { state: 'in_work' });
-		await putNode(projectA.taskId, projectA.writeKey, 'b', { state: 'in_work' });
+		await putNode(projectB.taskId, projectB.writeKey, 'a', { state: 'needs_input' });
+		await putNode(projectA.taskId, projectA.writeKey, 'b', { state: 'needs_input' });
 
 		const sawA = await c.waitFor(
 			(frames) => eventFrames(frames).some((f) => payloadOf(f).taskId === projectA.taskId),
@@ -325,8 +325,8 @@ describe('createProjectStream', () => {
 		const { id, writeKey, taskId } = await seed();
 
 		const c = await openStream(id, { since: 0, idleMs: 5000, heartbeatMs: 10_000 });
-		await putNode(taskId, writeKey, 'a', { state: 'in_work' });
-		await putNode(taskId, writeKey, 'b', { state: 'in_work' });
+		await putNode(taskId, writeKey, 'a', { state: 'needs_input' });
+		await putNode(taskId, writeKey, 'b', { state: 'needs_input' });
 
 		const frames = await readEvents(c, 5);
 		expect(frames.map((f) => f.event)).toEqual(['task', 'node', 'node', 'node', 'node']);
@@ -370,7 +370,7 @@ describe('createProjectStream', () => {
 
 		const c = await openStream(id, { idleMs: 300, heartbeatMs: 10_000 });
 		await sleep(120);
-		await putNode(taskId, writeKey, 'a', { state: 'in_work' });
+		await putNode(taskId, writeKey, 'a', { state: 'needs_input' });
 
 		expect(await c.waitFor((frames) => frames.some((f) => f.event === 'idle'), 1500)).toBe(true);
 		expect(c.elapsed()).toBeGreaterThanOrEqual(380);
@@ -402,7 +402,7 @@ describe('createProjectStream', () => {
 		await reader.cancel();
 		expect((await reader.read()).done).toBe(true);
 
-		await putNode(taskId, writeKey, 'a', { state: 'in_work' });
+		await putNode(taskId, writeKey, 'a', { state: 'needs_input' });
 		await sleep(300);
 		expect((await reader.read()).done).toBe(true);
 	});

@@ -695,6 +695,25 @@ describe('PUT /api/tasks/:taskId/nodes/<path>', () => {
 		expect(node.stateSince).toMatch(ISO);
 	});
 
+	it('moves a pending task to the first active state when a node goes active', async () => {
+		await api.putNode(t.taskId, 'a', { state: 'queued' }, p.writeKey);
+		expect((await (await api.getTask(t.taskId)).json()).task.state).toBe('queued');
+		await api.putNode(t.taskId, 'a', { state: 'in_work' }, p.writeKey);
+		expect((await (await api.getTask(t.taskId)).json()).task.state).toBe('planning');
+	});
+
+	it('keeps the task note and does not restart a task moved back to pending', async () => {
+		await api.patchTask(t.taskId, { note: 'waiting on design' }, p.writeKey);
+		await api.putNode(t.taskId, 'a', { state: 'in_work' }, p.writeKey);
+		const { task } = await (await api.getTask(t.taskId)).json();
+		expect(task.state).toBe('planning');
+		expect(task.note).toBe('waiting on design');
+
+		await api.patchTask(t.taskId, { state: 'queued' }, p.writeKey);
+		await api.putNode(t.taskId, 'a', { note: 'still going' }, p.writeKey);
+		expect((await (await api.getTask(t.taskId)).json()).task.state).toBe('queued');
+	});
+
 	it('creates a node with the given title, state, note, and tags', async () => {
 		const res = await api.putNode(
 			t.taskId,

@@ -386,8 +386,22 @@ export async function upsertNode(
 			.select()
 			.from(nodes)
 			.where(and(eq(nodes.taskId, taskId), eq(nodes.path, segments.join('/'))));
-		return existing ? updateNode(ctx, existing, input) : createNode(ctx, taskId, segments, input);
+		const node = existing
+			? await updateNode(ctx, existing, input)
+			: await createNode(ctx, taskId, segments, input);
+		if (node.state !== existing?.state) await startTaskIfActive(ctx, taskId, node);
+		return node;
 	});
+}
+
+// A Task still in a pending Kind moves to the first active State once any of its Nodes is active.
+async function startTaskIfActive(ctx: Ctx, taskId: string, node: Node): Promise<void> {
+	const kindOf = (key: string) => ctx.config.states.find((def) => def.key === key)?.kind;
+	if (kindOf(node.state) !== 'active') return;
+	const task = await taskInProject(ctx, taskId);
+	if (!task || kindOf(task.state) !== 'pending') return;
+	const active = ctx.config.states.find((def) => def.kind === 'active');
+	if (active) await applyTaskPatch(ctx, task, { state: active.key, note: task.note });
 }
 
 async function taskInProject(ctx: Ctx, taskId: string): Promise<TaskRow | undefined> {
@@ -500,49 +514,54 @@ export async function patchTask(
 	return mutate(projectId, async (ctx) => {
 		const old = await taskInProject(ctx, taskId);
 		if (!old) throw new ApiError(404, 'task not found');
-		if (patch.state !== undefined) assertState(ctx.config, patch.state);
-		const stateChanged = patch.state !== undefined && patch.state !== old.state;
-		const next = {
-			title: patch.title ?? old.title,
-			summary: patch.summary ?? old.summary,
-			state: patch.state ?? old.state,
-			note: patch.note ?? (stateChanged ? '' : old.note),
-			agent: mergeAgent(old.agent, patch.agent),
-			links: patch.links ?? old.links ?? [],
-			prs: patch.prs ?? old.prs ?? [],
-			repo: patch.repo ?? old.repo,
-			branch: patch.branch ?? old.branch
-		};
-		const changed =
-			next.title !== old.title ||
-			next.summary !== old.summary ||
-			next.state !== old.state ||
-			next.note !== old.note ||
-			next.repo !== old.repo ||
-			next.branch !== old.branch ||
-			!same(next.agent, old.agent) ||
-			!same(next.links, old.links ?? []) ||
-			!same(next.prs, old.prs ?? []);
-		if (!changed) return toTask(old);
-		const row: TaskRow = {
-			...old,
-			...next,
-			updatedAt: ctx.now,
-			stateSince: stateChanged ? ctx.now : old.stateSince,
-			finishedAt: stateChanged ? (isFinal(ctx.config, next.state) ? ctx.now : null) : old.finishedAt
-		};
-		await ctx.tx
-			.update(tasks)
-			.set({
-				...next,
-				updatedAt: row.updatedAt,
-				stateSince: row.stateSince,
-				finishedAt: row.finishedAt
-			})
-			.where(eq(tasks.id, taskId));
-		const task = toTask(row);
-		await ctx.emit('task', taskId, null, task);
-		if (stateChanged && row.finishedAt) logFinish(ctx.projectId, task);
-		return task;
+		return applyTaskPatch(ctx, old, patch);
 	});
+}
+
+async function applyTaskPatch(ctx: Ctx, old: TaskRow, patch: TaskPatch): Promise<Task> {
+	const taskId = old.id;
+	if (patch.state !== undefined) assertState(ctx.config, patch.state);
+	const stateChanged = patch.state !== undefined && patch.state !== old.state;
+	const next = {
+		title: patch.title ?? old.title,
+		summary: patch.summary ?? old.summary,
+		state: patch.state ?? old.state,
+		note: patch.note ?? (stateChanged ? '' : old.note),
+		agent: mergeAgent(old.agent, patch.agent),
+		links: patch.links ?? old.links ?? [],
+		prs: patch.prs ?? old.prs ?? [],
+		repo: patch.repo ?? old.repo,
+		branch: patch.branch ?? old.branch
+	};
+	const changed =
+		next.title !== old.title ||
+		next.summary !== old.summary ||
+		next.state !== old.state ||
+		next.note !== old.note ||
+		next.repo !== old.repo ||
+		next.branch !== old.branch ||
+		!same(next.agent, old.agent) ||
+		!same(next.links, old.links ?? []) ||
+		!same(next.prs, old.prs ?? []);
+	if (!changed) return toTask(old);
+	const row: TaskRow = {
+		...old,
+		...next,
+		updatedAt: ctx.now,
+		stateSince: stateChanged ? ctx.now : old.stateSince,
+		finishedAt: stateChanged ? (isFinal(ctx.config, next.state) ? ctx.now : null) : old.finishedAt
+	};
+	await ctx.tx
+		.update(tasks)
+		.set({
+			...next,
+			updatedAt: row.updatedAt,
+			stateSince: row.stateSince,
+			finishedAt: row.finishedAt
+		})
+		.where(eq(tasks.id, taskId));
+	const task = toTask(row);
+	await ctx.emit('task', taskId, null, task);
+	if (stateChanged && row.finishedAt) logFinish(ctx.projectId, task);
+	return task;
 }

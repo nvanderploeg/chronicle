@@ -119,8 +119,7 @@
 	}
 
 	.stale {
-		filter: grayscale(1);
-		opacity: 0.62;
+		opacity: 0.7;
 	}
 
 	.flashing {
