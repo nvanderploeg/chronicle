@@ -27,6 +27,8 @@ export function needsReview(status: NoticeStatus): boolean;
 export function justFinished(prev: Task | undefined, next: Task, config: ProjectConfig): boolean;
 export function allSettled(tasks: Task[], config: ProjectConfig): boolean;
 export function formatElapsed(fromIso: string, now: number): string;
+export function runtimeOf(task: Task, now: number): string;
+export function stepProgress(nodes: Node[], taskId: string, config: ProjectConfig): { done: number; total: number };
 ```
 
 - **applyEvent** — returns a new state; never mutates its input. An event with `seq <= state.lastSeq` returns `state` unchanged (same reference). Otherwise `lastSeq = event.seq` and: `config` → `project.config` replaced; `task` → upsert by `id`, keeping the ordering rule; `node` → upsert by (`taskId`, `path`). Node order in `state.nodes` is not significant.
@@ -42,3 +44,15 @@ export function formatElapsed(fromIso: string, now: number): string;
 - **justFinished** — true when `next`'s kind is `done` and `prev` is undefined-or-not-done. Used to trigger the green flash; a task first seen already done (on page load) is handled by the caller passing `prev` = the same task, so it returns false.
 - **allSettled** — true when `tasks` is non-empty and every task's kind is `done` or `failed`.
 - **formatElapsed** — elapsed `now - Date.parse(fromIso)`, floored, negative treated as 0: under 60 s → `'<n>s'`; under 60 min → `'<n>m'`; under 24 h → `'<h>h'` or `'<h>h <m>m'` when minutes > 0; otherwise `'<d>d'` or `'<d>d <h>h'` when hours > 0. Examples: 0 → `'0s'`, 59 999 ms → `'59s'`, 60 000 → `'1m'`, 3 600 000 → `'1h'`, 3 900 000 → `'1h 5m'`, 90 000 000 → `'1d 1h'`.
+- **runtimeOf** — `formatElapsed` from `task.createdAt` to `task.finishedAt`, or to `now` while unfinished.
+- **stepProgress** — Steps (depth 1) of that task whose State is `done`-kind, over all its Steps. Subtasks are not counted.
+
+Also in `ui/meta.ts` and `ui/markdown.ts`:
+
+```ts
+export function tokensByModel(tasks: Task[], nodes: Node[]): { model: string; tokens: number }[];
+export function taskMarkdown(task: Task, nodes: Node[], notices: Notice[], config: ProjectConfig, now: number): string;
+```
+
+- **tokensByModel** — tokens of the tasks' `agent` and of their nodes' `agent`, summed per `agent.model` (`'unknown'` when absent), largest first; ties by model name. Nodes of tasks not in `tasks` and agents without tokens are ignored.
+- **taskMarkdown** — a task as markdown for pasting: a facts line (state, steps done, runtime, agent, tokens), summary, note, nested Steps with state and note, the task's Notices, Links and PRs. Empty sections are omitted.

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { Node, ProjectConfig, Task } from '../types.ts';
-import { agentParts, eyeColor, formatTokens, linkView, prView, totalTokens } from './meta.ts';
+import {
+	agentParts,
+	eyeColor,
+	formatTokens,
+	linkView,
+	prView,
+	tokensByModel,
+	totalTokens
+} from './meta.ts';
 
 const CONFIG: ProjectConfig = {
 	theme: 'system',
@@ -95,5 +103,24 @@ describe('prView', () => {
 			kind: 'MR',
 			ref: '!7'
 		});
+	});
+});
+
+describe('tokensByModel', () => {
+	const withModel = (id: string, model: string | undefined, tokens: number) =>
+		({ id, taskId: id, agent: { model, tokens } }) as Task & Node;
+
+	it('sums tasks and their nodes per model, largest first', () => {
+		const tasks = [withModel('t1', 'opus', 100), withModel('t2', 'sonnet', 30)];
+		const nodes = [withModel('t1', 'sonnet', 50), withModel('t1', undefined, 5)];
+		expect(tokensByModel(tasks, nodes)).toEqual([
+			{ model: 'opus', tokens: 100 },
+			{ model: 'sonnet', tokens: 80 },
+			{ model: 'unknown', tokens: 5 }
+		]);
+	});
+
+	it('ignores nodes of tasks not listed and agents without tokens', () => {
+		expect(tokensByModel([withModel('t1', 'opus', 0)], [withModel('gone', 'opus', 9)])).toEqual([]);
 	});
 });

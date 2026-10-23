@@ -6,7 +6,7 @@
 	import { crossfade, slide } from 'svelte/transition';
 	import { Board, provideBoard } from '../ui/board.svelte.ts';
 	import type { Snapshot } from '../types.ts';
-	import { eyeColor, eyeSvg } from '../ui/meta.ts';
+	import { eyeColor, eyeSvg, formatTokens, tokensByModel } from '../ui/meta.ts';
 	import Links from './Links.svelte';
 	import NoticesTab from './NoticesTab.svelte';
 	import SiteFooter from './SiteFooter.svelte';
@@ -54,6 +54,8 @@
 	const icon = $derived(
 		frame ? `data:image/svg+xml,${encodeURIComponent(eyeSvg(frame))}` : '/favicon.svg'
 	);
+	const byModel = $derived(tokensByModel(board.tasks, board.state.nodes));
+	const projectTokens = $derived(byModel.reduce((sum, m) => sum + m.tokens, 0));
 	const connectionLabel = $derived(
 		{ connecting: 'Connecting', live: 'Live', retrying: 'Reconnecting', idle: 'Idle' }[
 			board.connection
@@ -83,9 +85,19 @@
 			{/if}
 			<h1>{title}</h1>
 		</div>
-		<span class="conn conn-{board.connection}" data-testid="connection">
-			<i aria-hidden="true"></i>{connectionLabel}
-		</span>
+		<div class="right">
+			{#if projectTokens}
+				<span
+					class="tokens"
+					data-testid="project-tokens"
+					title={byModel.map((m) => `${m.model}: ${m.tokens.toLocaleString()}`).join('\n')}
+					>{formatTokens(projectTokens)} tokens</span
+				>
+			{/if}
+			<span class="conn conn-{board.connection}" data-testid="connection">
+				<i aria-hidden="true"></i>{connectionLabel}
+			</span>
+		</div>
 	</header>
 
 	{#if !taskId && (project.notes || project.links.length)}
@@ -276,6 +288,20 @@
 
 	.back:hover {
 		color: var(--ink);
+	}
+
+	.right {
+		display: flex;
+		flex: none;
+		align-items: center;
+		gap: 1rem;
+	}
+
+	.tokens {
+		color: var(--muted);
+		font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+		font-size: 0.8rem;
+		cursor: help;
 	}
 
 	.conn {

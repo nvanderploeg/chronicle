@@ -103,3 +103,23 @@ export function prView(pr: PullRequest): PrView {
 		review: pr.review ?? null
 	};
 }
+
+export interface ModelTokens {
+	model: string;
+	tokens: number;
+}
+
+export function tokensByModel(tasks: Task[], nodes: Node[]): ModelTokens[] {
+	const totals = new Map<string, number>();
+	const add = (agent: AgentInfo | null) => {
+		if (!agent?.tokens) return;
+		const model = agent.model ?? 'unknown';
+		totals.set(model, (totals.get(model) ?? 0) + agent.tokens);
+	};
+	for (const task of tasks) add(task.agent);
+	const ids = new Set(tasks.map((t) => t.id));
+	for (const node of nodes) if (ids.has(node.taskId)) add(node.agent);
+	return [...totals]
+		.map(([model, tokens]) => ({ model, tokens }))
+		.sort((a, b) => b.tokens - a.tokens || a.model.localeCompare(b.model));
+}

@@ -11,7 +11,9 @@ import {
 	kindOf,
 	needsReview,
 	noticesOf,
+	runtimeOf,
 	stateOf,
+	stepProgress,
 	subtreeStates,
 	taskBucket
 } from './dashboard.ts';
@@ -703,5 +705,31 @@ describe('formatElapsed', () => {
 
 	it('parses fromIso with Date.parse semantics, so offsets are honoured', () => {
 		expect(formatElapsed('2026-10-12T10:00:00+02:00', Date.UTC(2026, 9, 12, 9, 0, 0))).toBe('1h');
+	});
+});
+
+describe('runtimeOf', () => {
+	it('counts a running task up to now', () => {
+		expect(runtimeOf(task({ id: 't' }), T0 + 12 * MIN)).toBe('12m');
+	});
+
+	it('stops at finishedAt once the task finished', () => {
+		expect(runtimeOf(task({ id: 't', finishedAt: at(5) }), T0 + 90 * MIN)).toBe('5m');
+	});
+});
+
+describe('stepProgress', () => {
+	it('counts done-kind steps over all steps, ignoring subtasks and other tasks', () => {
+		const nodes = [
+			node({ taskId: 't', path: 'a', state: 'done' }),
+			node({ taskId: 't', path: 'b', state: 'in_work' }),
+			node({ taskId: 't', path: 'b/x', state: 'done' }),
+			node({ taskId: 'other', path: 'a', state: 'done' })
+		];
+		expect(stepProgress(nodes, 't', BUILD_IT)).toEqual({ done: 1, total: 2 });
+	});
+
+	it('is 0 of 0 for a task with no steps', () => {
+		expect(stepProgress([], 't', BUILD_IT)).toEqual({ done: 0, total: 0 });
 	});
 });

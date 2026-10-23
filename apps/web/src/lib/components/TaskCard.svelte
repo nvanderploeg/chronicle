@@ -1,7 +1,15 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { useBoard } from '../ui/board.svelte.ts';
-	import { formatElapsed, isStale, latestActivity, stateOf } from '../ui/dashboard.ts';
+	import {
+		formatElapsed,
+		isStale,
+		latestActivity,
+		runtimeOf,
+		stateOf,
+		stepProgress
+	} from '../ui/dashboard.ts';
+	import { taskMarkdown } from '../ui/markdown.ts';
 	import { totalTokens } from '../ui/meta.ts';
 	import type { Task } from '../types.ts';
 	import AgentChip from './AgentChip.svelte';
@@ -23,6 +31,24 @@
 	const pending = $derived(board.pendingNotices(task.id));
 	let noticesOpen = $state(false);
 	const ref = $derived([task.repo, task.branch].filter(Boolean).join(' @ '));
+	const runtime = $derived(runtimeOf(task, board.now));
+	const progress = $derived(stepProgress(nodes, task.id, board.config));
+	let copyResult = $state<'copied' | 'failed' | null>(null);
+	let copyTimer: ReturnType<typeof setTimeout> | undefined;
+	$effect(() => () => clearTimeout(copyTimer));
+
+	async function copy() {
+		try {
+			await navigator.clipboard.writeText(
+				taskMarkdown(task, nodes, board.noticesOf(task.id), board.config, board.now)
+			);
+			copyResult = 'copied';
+		} catch {
+			copyResult = 'failed';
+		}
+		clearTimeout(copyTimer);
+		copyTimer = setTimeout(() => (copyResult = null), 1500);
+	}
 </script>
 
 <article
@@ -44,10 +70,31 @@
 				>
 			{/if}
 		</div>
-		<StateMark {def} variant="pill">
-			{def.label} · {formatElapsed(task.stateSince, board.now)}
-		</StateMark>
+		<div class="status">
+			<StateMark {def} variant="pill">
+				{def.label} · {formatElapsed(task.stateSince, board.now)}
+			</StateMark>
+			<button type="button" class="copy" data-testid="task-copy" onclick={copy}>
+				{copyResult === 'copied' ? 'Copied' : copyResult === 'failed' ? 'Copy failed' : 'Copy'}
+			</button>
+		</div>
 	</header>
+
+	<div class="run" data-testid="task-run">
+		<span title={task.finishedAt ? 'Total run time' : 'Running for'}>
+			{task.finishedAt ? 'took' : 'running'}
+			{runtime}
+		</span>
+		{#if progress.total}
+			<span class="progress" data-testid="task-progress">
+				<span class="bar" aria-hidden="true"
+					><i style:width="{(progress.done / progress.total) * 100}%"></i></span
+				>
+				{progress.done}/{progress.total}
+				{progress.total === 1 ? 'step' : 'steps'}
+			</span>
+		{/if}
+	</div>
 
 	{#if task.prs.length}
 		<div class="prs" data-testid="task-prs"><PrChips prs={task.prs} /></div>
@@ -159,6 +206,65 @@
 
 	.open:hover {
 		color: var(--ink);
+	}
+
+	.status {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+	}
+
+	.copy {
+		padding: 0.15rem 0.6rem;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--panel-2);
+		color: var(--muted);
+		font: inherit;
+		font-size: 0.78rem;
+		cursor: pointer;
+	}
+
+	.copy:hover {
+		color: var(--ink);
+	}
+
+	.copy:focus-visible {
+		outline: 2px solid var(--ink);
+		outline-offset: 2px;
+	}
+
+	.run {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.25rem 1rem;
+		margin-top: 0.4rem;
+		color: var(--muted);
+		font-size: 0.82rem;
+	}
+
+	.progress {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.45rem;
+		color: var(--ink);
+		font-weight: 600;
+	}
+
+	.bar {
+		width: 5rem;
+		height: 0.4rem;
+		border-radius: 999px;
+		background: var(--line);
+		overflow: hidden;
+	}
+
+	.bar i {
+		display: block;
+		height: 100%;
+		background: var(--sc);
+		transition: width 0.6s ease;
 	}
 
 	.prs {

@@ -160,3 +160,21 @@ export function formatElapsed(fromIso: string, now: number): string {
 	const d = Math.floor(h / 24);
 	return h % 24 ? `${d}d ${h % 24}h` : `${d}d`;
 }
+
+export function runtimeOf(task: Task, now: number): string {
+	const end = task.finishedAt ? Date.parse(task.finishedAt) : now;
+	return formatElapsed(task.createdAt, end);
+}
+
+export interface StepProgress {
+	done: number;
+	total: number;
+}
+
+export function stepProgress(nodes: Node[], taskId: string, config: ProjectConfig): StepProgress {
+	const steps = childrenOf(nodes, taskId, null);
+	return {
+		done: steps.filter((s) => kindOf(config, s.state) === 'done').length,
+		total: steps.length
+	};
+}
