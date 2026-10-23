@@ -22,7 +22,7 @@
 		{#if hash === 'unknown'}{hash}{:else}<a
 				href="{repo}/commit/{hash}"
 				target="_blank"
-				rel="noopener noreferrer"><code>{hash}</code></a
+				rel="noopener noreferrer"><span class="hash">{hash}</span></a
 			>{/if}</span
 	>
 </nav>
@@ -39,6 +39,10 @@
 	.build {
 		opacity: 0.7;
 		font-variant-numeric: tabular-nums;
+	}
+
+	.hash {
+		font-family: ui-monospace, monospace;
 	}
 
 	a {
