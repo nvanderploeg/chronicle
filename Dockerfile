@@ -10,6 +10,7 @@ COPY packages/client/package.json packages/client/
 COPY packages/mcp/package.json packages/mcp/
 RUN pnpm install --frozen-lockfile
 COPY . .
+ARG GIT_COMMIT
 RUN pnpm --filter web build
 
 FROM node:22-alpine AS runtime

@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config';
 import tailwindcss from '@tailwindcss/vite';
 import adapter from '@sveltejs/adapter-node';
 import { sveltekit } from '@sveltejs/kit/vite';
+import { buildInfo } from './build-info.ts';
 
 export default defineConfig(({ mode, command }) => {
 	// Set before the sveltekit plugin loads the environment; the real environment wins.
@@ -17,6 +18,7 @@ export default defineConfig(({ mode, command }) => {
 	}
 
 	return {
+		define: buildInfo(),
 		plugins: [
 			tailwindcss(),
 			sveltekit({
