@@ -142,7 +142,7 @@ Also export the `Tag`, `AgentInfo`, `Link`, `Project`, `Task`, `Node`, `Image`, 
 
 ### Runestone login file
 
-One login serves every Runestone tool on a machine (chronicle, beryl, command-center). The file is
+One login serves every Runestone tool on a machine (chronicle, beryl). The file is
 `$XDG_CONFIG_HOME/runestone/login.json` (default `~/.config/runestone/login.json`), mode 0600 in a
 directory of mode 0700, holding the Firebase refresh token:
 
