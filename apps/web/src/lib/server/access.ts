@@ -1,4 +1,6 @@
 import { ApiError } from '#lib/server/api.ts';
+import { holdsWriteKey } from '#lib/server/auth.ts';
+import { bearerUser } from '#lib/server/device.ts';
 import type { Viewer } from '#lib/server/identity.ts';
 import { getProjectRow, getTaskRow, type ProjectRow, type TaskRow } from '#lib/server/store.ts';
 import { viewerOf } from '#lib/server/viewer.ts';
@@ -9,8 +11,11 @@ export const isOwner = (project: ProjectRow, viewer: Viewer | null): boolean =>
 const isPublic = (project: ProjectRow): boolean => project.ownerUid === null || project.public;
 
 // The session is only checked when the Project is private: anonymous traffic never touches Firebase.
+// A tool reads as it writes: with the Write key or the Owner's ID token as the bearer.
 async function mayOpenProject(request: Request, project: ProjectRow): Promise<boolean> {
-	return isPublic(project) || isOwner(project, await viewerOf(request));
+	if (isPublic(project) || holdsWriteKey(request, project)) return true;
+	if (isOwner(project, await viewerOf(request))) return true;
+	return isOwner(project, await bearerUser(request));
 }
 
 /** 404 rather than 403 so a private Project looks like one that does not exist. */

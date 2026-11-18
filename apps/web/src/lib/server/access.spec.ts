@@ -185,6 +185,17 @@ describe('owned Projects', () => {
 		expect((await read(id, 'forged-cookie-owner')).status).toBe(404);
 	});
 
+	it("are readable with their owner's ID token as the bearer, and no one else's", async () => {
+		const project = await ownedProject();
+		const taskId = await task(project);
+		const bearerRead = (key: string) =>
+			getTask(ev({ path: `/api/tasks/${taskId}`, key, params: { taskId } }));
+
+		expect((await bearerRead(project.token)).status).toBe(200);
+		expect((await bearerRead('eyJ.bob.sig')).status).toBe(404);
+		expect((await bearerRead('ws_not-a-key')).status).toBe(404);
+	});
+
 	it('refuse the page load to everyone but the owner', async () => {
 		const { id } = await ownedProject();
 		const page = (as?: string) =>
@@ -509,6 +520,18 @@ describe('an anonymous Project that gains an Owner', () => {
 		expect(await write(id, key)).toBe(201);
 		expect(await write(id, 'eyJ.alice.sig')).toBe(201);
 		expect(await write(id, 'eyJ.bob.sig')).toBe(403);
+	});
+
+	it('stays readable with its Write key once the Owner makes it private', async () => {
+		const { id, key } = await anonymous();
+		await assignOwner(id, { uid: 'alice' });
+		await setProjectPublic(id, false);
+		const bearerRead = (bearer: string) =>
+			getProject(ev({ path: `/api/projects/${id}`, key: bearer, params: { id } }));
+
+		expect((await read(id)).status).toBe(404);
+		expect((await bearerRead(key)).status).toBe(200);
+		expect((await bearerRead('ws_wrong')).status).toBe(404);
 	});
 
 	it('lets only the Owner rotate the key, which retires the old one', async () => {

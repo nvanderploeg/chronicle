@@ -25,6 +25,8 @@ export function createDiscovery(opts: {
 	candidates: string[];
 	probeTimeoutMs: number;
 	remoteProbeTimeoutMs: number;
+	ttlMs: number;
+	now: () => number;
 }) {
 	const pinned = normaliseServer(opts.env.CHRONICLE_URL ?? '') || null;
 	const targets = pinned ? [pinned] : opts.candidates.map(normaliseServer).filter(Boolean);
@@ -42,11 +44,19 @@ export function createDiscovery(opts: {
 			: { server, ok: true };
 	}
 
+	// Only a healthy answer is reused: a server found down is probed again on the next call.
+	let found: { server: string; at: number } | null = null;
+
 	return {
 		pinned,
 		async discover(): Promise<string | null> {
+			if (found && opts.now() - found.at < opts.ttlMs) return found.server;
+			found = null;
 			for (const server of targets) {
-				if ((await probe(server)).ok) return server;
+				if ((await probe(server)).ok) {
+					found = { server, at: opts.now() };
+					return server;
+				}
 			}
 			return null;
 		},

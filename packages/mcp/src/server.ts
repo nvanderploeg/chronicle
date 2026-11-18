@@ -119,16 +119,19 @@ export interface WatchOptions {
 
 // Keeps PR status on the dashboard current while an agent is connected. Every failure is
 // swallowed: the watcher must never disturb the agent's session.
+// Watch only tasks this session named: every agent on the machine runs its own server, so
+// scanning the whole Registry multiplies reads by the number of open sessions.
 function createWatcher(
 	client: ChronicleClient,
 	{ intervalMs = 180_000, soonMs = 5_000 }: WatchOptions
 ) {
+	const watched = new Set<string>();
 	let running = false;
-	const sync = async (taskIds?: string[]) => {
-		if (running) return;
+	const sync = async (taskIds: string[]) => {
+		if (running || taskIds.length === 0) return;
 		running = true;
 		try {
-			await client.syncPrs(taskIds ? { taskIds } : {});
+			await client.syncPrs({ taskIds });
 		} catch {
 			// tracking is best effort
 		} finally {
@@ -141,12 +144,11 @@ function createWatcher(
 		timers.push(timer);
 		return timer;
 	};
-	if (intervalMs > 0) {
-		unref(setTimeout(() => void sync(), Math.min(soonMs, intervalMs)));
-		unref(setInterval(() => void sync(), intervalMs));
-	}
+	if (intervalMs > 0) unref(setInterval(() => void sync([...watched]), intervalMs));
 	return {
+		track: (taskId: string) => void watched.add(taskId),
 		soon: (taskId: string) => {
+			watched.add(taskId);
 			if (intervalMs > 0) unref(setTimeout(() => void sync([taskId]), soonMs));
 		},
 		stop: () => timers.forEach((t) => clearTimeout(t))
@@ -230,7 +232,10 @@ export function createServer(
 			const tool = args.agent?.tool ?? toolFromClient(server.server.getClientVersion()?.name);
 			const withTool: AgentInfo | undefined = tool ? { ...args.agent, tool } : args.agent;
 			const result = await client.startTask(withTool ? { ...args, agent: withTool } : args);
-			if (result.ok) open(result.value.url);
+			if (result.ok) {
+				open(result.value.url);
+				watcher.track(result.value.taskId);
+			}
 			if (result.ok && args.prs?.length) watcher.soon(result.value.taskId);
 			return respond(result);
 		}
@@ -253,7 +258,10 @@ export function createServer(
 				position: z.number().int().optional()
 			}
 		},
-		async (args) => respond(await client.updateStep(args))
+		async (args) => {
+			watcher.track(args.taskId);
+			return respond(await client.updateStep(args));
+		}
 	);
 
 	server.registerTool(
@@ -273,6 +281,7 @@ export function createServer(
 			}
 		},
 		async (args) => {
+			watcher.track(args.taskId);
 			const result = await client.updateTask(args);
 			if (result.ok && args.prs?.length) watcher.soon(args.taskId);
 			return respond(result);
@@ -291,7 +300,10 @@ export function createServer(
 				path: z.string().optional()
 			}
 		},
-		async (args) => respond(await client.addNotice(args))
+		async (args) => {
+			watcher.track(args.taskId);
+			return respond(await client.addNotice(args));
+		}
 	);
 
 	server.registerTool(
@@ -307,7 +319,10 @@ export function createServer(
 				review: z.boolean().optional()
 			}
 		},
-		async (args) => respond(await client.addImage(args))
+		async (args) => {
+			watcher.track(args.taskId);
+			return respond(await client.addImage(args));
+		}
 	);
 
 	server.registerTool(
@@ -333,7 +348,10 @@ export function createServer(
 				'Return the current task and its nodes; call this after context compaction to recover progress.',
 			inputSchema: { taskId: z.string() }
 		},
-		async (args) => respond(await client.getTask(args))
+		async (args) => {
+			watcher.track(args.taskId);
+			return respond(await client.getTask(args));
+		}
 	);
 
 	server.registerTool(

@@ -133,6 +133,8 @@ export interface ClientOptions {
 	candidates?: string[];
 	probeTimeoutMs?: number;
 	remoteProbeTimeoutMs?: number;
+	discoveryTtlMs?: number; // how long a healthy discovery result is reused; default 300 000
+	now?: () => number;
 	requestTimeoutMs?: number;
 	imageTimeoutMs?: number;
 	loginPollMs?: number;

@@ -643,15 +643,27 @@ describe('dashboard opener', () => {
 describe('PR watcher', () => {
 	afterEach(() => vi.useRealTimers());
 
-	it('syncs every interval once connected', async () => {
+	it('syncs nothing until this session names a task', async () => {
 		vi.useFakeTimers();
 		const client = fakeClient();
 		await connect(client, 'test-agent', { intervalMs: 60_000, soonMs: 1_000 });
 
-		await vi.advanceTimersByTimeAsync(1_000);
-		expect(client.syncPrs).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+		expect(client.syncPrs).not.toHaveBeenCalled();
+	});
+
+	it('syncs only the tasks this session named, every interval', async () => {
+		vi.useFakeTimers();
+		const client = fakeClient();
+		const { mcp } = await connect(client, 'test-agent', { intervalMs: 60_000, soonMs: 1_000 });
+
+		await mcp.callTool({ name: 'update_step', arguments: { taskId: 'task1', path: 's' } });
+		await mcp.callTool({ name: 'get_task', arguments: { taskId: 'task2' } });
 		await vi.advanceTimersByTimeAsync(60_000);
-		expect(client.syncPrs).toHaveBeenCalledTimes(2);
+
+		expect(client.syncPrs).toHaveBeenCalledTimes(1);
+		expect(client.syncPrs).toHaveBeenCalledWith({ taskIds: ['task1', 'task2'] });
 	});
 
 	it('checks a task soon after update_task sends prs', async () => {
@@ -692,9 +704,10 @@ describe('PR watcher', () => {
 		vi.useFakeTimers();
 		const client = fakeClient();
 		client.syncPrs.mockRejectedValue(new Error('boom'));
-		await connect(client, 'test-agent', { intervalMs: 60_000, soonMs: 1_000 });
+		const { mcp } = await connect(client, 'test-agent', { intervalMs: 60_000, soonMs: 1_000 });
+		await mcp.callTool({ name: 'get_task', arguments: { taskId: 'task1' } });
 
-		await vi.advanceTimersByTimeAsync(61_000);
+		await vi.advanceTimersByTimeAsync(120_000);
 
 		expect(client.syncPrs).toHaveBeenCalledTimes(2);
 	});

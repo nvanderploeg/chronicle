@@ -237,7 +237,7 @@ Read rules, for every read route (`GET /api/projects/:id`, `/stream`, `GET /api/
 `/events`, image files, and the `/p/…` pages):
 
 - A Project that is anonymous or public: anyone.
-- A private owned Project: only its signed-in owner; everyone else gets the 404 an unknown id gets.
+- A private owned Project: only its owner, by session cookie or by `Authorization: Bearer` with an ID token of the owner or the Project's Write key; everyone else gets the 404 an unknown id gets.
 - A Task with `public: true`: anyone with its id, whatever its Project's visibility. A page for such
   a Task shows no Project name, notes or links, and `GET /api/projects/:id/stream?task=<taskId>`
   streams only that Task's events and Config changes.
@@ -318,9 +318,9 @@ minutes (429 with `Retry-After`). Endpoints and the Bundle format are in
 Under `$XDG_CONFIG_HOME/chronicle` (default `~/.config/chronicle`), written atomically with mode 0600:
 
 - `projects.json` — `{ [server]: { [repoKey]: { projectId, writeKey, name, projectUrl? } } }`. `projectUrl` is the `url` the server returned at creation. `repoKey` = absolute `git rev-parse --path-format=absolute --git-common-dir` of the cwd, or the cwd's realpath outside git. `name` = the project name the server returned or a later rename set.
-- `tasks.json` — `{ [taskId]: { server, projectId, projectUrl? } }`. `projectUrl` is the task `url` minus `/t/<taskId>`.
+- `tasks.json` — `{ [taskId]: { server, projectId, projectUrl?, savedAt? } }`. `projectUrl` is the task `url` minus `/t/<taskId>`; `savedAt` is the ISO time the handle was written. Saving a handle drops every handle whose `savedAt` is over 3 days old and stamps one without `savedAt` with the current time.
 
-Discovery: `CHRONICLE_URL` set → only that server, never another. Otherwise probe `http://localhost:3280` then `https://chronicle.merc.camp` with `GET /api/health` (300 ms timeout for a loopback host, 2 s for any other; needs 2xx and `service === 'chronicle'`), at every task start. Updates go to the server in the task's handle.
+Discovery: `CHRONICLE_URL` set → only that server, never another. Otherwise probe `http://localhost:3280` then `https://chronicle.merc.camp` with `GET /api/health` (300 ms timeout for a loopback host, 2 s for any other; needs 2xx and `service === 'chronicle'`), at every task start; a healthy answer is reused for 5 minutes. Updates go to the server in the task's handle.
 
 `startTask` sends `repo` (`owner/name` from the `origin` remote) and `branch` (`git symbolic-ref --short HEAD`) of the cwd unless given, and `agent.tool = 'claude-code'` when `CLAUDECODE=1` and no tool was given. It sends `name` on project creation only when the caller passed `project`; a later `project` that differs from the registry entry renames the project once.
 

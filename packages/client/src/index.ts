@@ -117,14 +117,16 @@ async function guard<T>(run: () => Promise<Result<T>>): Promise<Result<T>> {
 export function createClient(options: ClientOptions = {}): ChronicleClient {
 	const env = options.env ?? process.env;
 	const run = options.runCommand ?? runCommand;
-	// Tasks whose PRs have all merged or closed: nothing left to watch in this process.
+	// Tasks the PR sync skips for the rest of this process: no PRs, PRs all final, finished,
+	// or not readable. Writing `prs` through this client unsettles a task.
 	const settledPrs = new Set<string>();
 	const fetchFn = options.fetch ?? globalThis.fetch;
 	const requestTimeoutMs = options.requestTimeoutMs ?? 2000;
 	const imageTimeoutMs = options.imageTimeoutMs ?? 15_000;
 	const configDir =
 		options.configDir ?? join(env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'chronicle');
-	const store = createStore(configDir);
+	const now = options.now ?? Date.now;
+	const store = createStore(configDir, now);
 	const loginFile =
 		options.loginFile ??
 		join(env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'runestone', 'login.json');
@@ -133,7 +135,9 @@ export function createClient(options: ClientOptions = {}): ChronicleClient {
 		env,
 		candidates: options.candidates ?? DEFAULT_CANDIDATES,
 		probeTimeoutMs: options.probeTimeoutMs ?? 300,
-		remoteProbeTimeoutMs: options.remoteProbeTimeoutMs ?? 2000
+		remoteProbeTimeoutMs: options.remoteProbeTimeoutMs ?? 2000,
+		ttlMs: options.discoveryTtlMs ?? 300_000,
+		now
 	});
 
 	async function send<T>(
@@ -324,6 +328,13 @@ export function createClient(options: ClientOptions = {}): ChronicleClient {
 		};
 	}
 
+	// Private Projects answer only their Owner: send the same bearer a write would.
+	const readTask = ({ server, key }: Target, taskId: string) =>
+		send<{ task: Task; nodes: Node[]; notices?: Notice[] }>(server, taskPath(taskId), {
+			method: 'GET',
+			key
+		});
+
 	const targetFor = (input: { taskId?: string; cwd?: string }) =>
 		input.taskId === undefined ? targetFromRepo(input.cwd) : targetFromTask(input.taskId);
 
@@ -439,6 +450,7 @@ export function createClient(options: ClientOptions = {}): ChronicleClient {
 
 		updateTask: (input) =>
 			guard(async () => {
+				if (input.prs) settledPrs.delete(input.taskId);
 				const target = await writeTarget(input.taskId);
 				if (!target.ok) return target;
 				const { server, key } = target.value;
@@ -465,11 +477,20 @@ export function createClient(options: ClientOptions = {}): ChronicleClient {
 				let checked = 0;
 				for (const taskId of ids) {
 					if (settledPrs.has(taskId)) continue;
-					const current = await api.getTask({ taskId });
-					if (!current.ok) continue;
-					const { task } = current.value;
-					if (task.prs.length === 0) continue;
-					if (task.prs.every(isFinalPr)) {
+					const target = await targetFromTask(taskId);
+					if (!target.ok) {
+						settledPrs.add(taskId);
+						continue;
+					}
+					const current = await readTask(target.value, taskId);
+					if (!current.ok) {
+						if (current.status !== undefined && current.status < 500 && current.status !== 429) {
+							settledPrs.add(taskId);
+						}
+						continue;
+					}
+					const { task } = current.body;
+					if (task.prs.length === 0 || task.prs.every(isFinalPr) || task.finishedAt !== null) {
 						settledPrs.add(taskId);
 						continue;
 					}
@@ -557,12 +578,8 @@ export function createClient(options: ClientOptions = {}): ChronicleClient {
 			guard(async () => {
 				const target = await targetFromTask(input.taskId);
 				if (!target.ok) return target;
-				const { server, projectUrl } = target.value;
-				const reply = await send<{ task: Task; nodes: Node[]; notices?: Notice[] }>(
-					server,
-					taskPath(input.taskId),
-					{ method: 'GET' }
-				);
+				const { projectUrl } = target.value;
+				const reply = await readTask(target.value, input.taskId);
 				if (!reply.ok) return reply;
 				return {
 					ok: true,

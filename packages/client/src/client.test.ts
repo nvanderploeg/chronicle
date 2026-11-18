@@ -377,6 +377,35 @@ describe('discover', () => {
 		expect(fake.requests.map((r) => r.path)).toEqual(['/api/health']);
 	});
 
+	it('reuses a healthy server for the discovery TTL, then probes again', async () => {
+		const fake = await startFake(() => healthy());
+		let clock = 1_000_000;
+		const client = makeClient({
+			candidates: [fake.url],
+			discoveryTtlMs: 300_000,
+			now: () => clock
+		});
+
+		await client.discover();
+		clock += 299_999;
+		await client.discover();
+		expect(fake.requests).toHaveLength(1);
+
+		clock += 1;
+		expect(await client.discover()).toBe(fake.url);
+		expect(fake.requests).toHaveLength(2);
+	});
+
+	it('probes again on every call while no server is healthy', async () => {
+		const fake = await startFake(() => ({ status: 503, body: {} }));
+		const client = makeClient({ candidates: [fake.url] });
+
+		await client.discover();
+		await client.discover();
+
+		expect(fake.requests).toHaveLength(2);
+	});
+
 	it('probes through an injected fetch', async () => {
 		const fetchMock = vi.fn(
 			async () =>
@@ -449,7 +478,12 @@ describe('startTask', () => {
 			}
 		});
 		expect(readFile('tasks.json')).toEqual({
-			'task-1': { server: fake.url, projectId: 'proj-1', projectUrl: `${fake.url}/p/proj-1` }
+			'task-1': {
+				server: fake.url,
+				projectId: 'proj-1',
+				projectUrl: `${fake.url}/p/proj-1`,
+				savedAt: expect.any(String)
+			}
 		});
 		expect(modeOf('projects.json')).toBe(0o600);
 		expect(modeOf('tasks.json')).toBe(0o600);
@@ -487,7 +521,12 @@ describe('startTask', () => {
 		expect(projectPosts).toHaveLength(1);
 		expect(taskPosts).toHaveLength(2);
 		expect(taskPosts[1].headers.authorization).toBe('Bearer key-1');
-		const handle = { server: fake.url, projectId: 'proj-1', projectUrl: `${fake.url}/p/proj-1` };
+		const handle = {
+			server: fake.url,
+			projectId: 'proj-1',
+			projectUrl: `${fake.url}/p/proj-1`,
+			savedAt: expect.any(String)
+		};
 		expect(readFile('tasks.json')).toEqual({ 'task-1': handle, 'task-2': handle });
 	});
 
@@ -555,7 +594,12 @@ describe('startTask', () => {
 				}
 			});
 			expect(readFile('tasks.json')).toEqual({
-				'task-9': { server: fake.url, projectId: 'proj-2', projectUrl: `${fake.url}/p/proj-2` }
+				'task-9': {
+					server: fake.url,
+					projectId: 'proj-2',
+					projectUrl: `${fake.url}/p/proj-2`,
+					savedAt: expect.any(String)
+				}
 			});
 		}
 	);
@@ -697,6 +741,31 @@ describe('startTask', () => {
 		expect(result.ok).toBe(true);
 		expect(fs.statSync(configDir).mode & 0o777).toBe(0o700);
 		expect(modeOf('projects.json')).toBe(0o600);
+	});
+});
+
+describe('task registry pruning', () => {
+	const DAY = 24 * 60 * 60 * 1000;
+	const NOW = Date.parse('2026-11-18T12:00:00.000Z');
+
+	it('drops handles saved over 3 days ago and stamps unstamped ones when a task starts', async () => {
+		const fake = await startFake(serveTasks());
+		const stale = new Date(NOW - 3 * DAY - 1).toISOString();
+		const recent = new Date(NOW - 3 * DAY).toISOString();
+		seedFile('tasks.json', {
+			old: { server: fake.url, projectId: 'p', savedAt: stale },
+			kept: { server: fake.url, projectId: 'p', savedAt: recent },
+			legacy: { server: fake.url, projectId: 'p' }
+		});
+		const client = makeClient({ candidates: [fake.url], now: () => NOW });
+
+		await client.startTask({ title: 'T', cwd: workDir() });
+
+		const tasks = readFile('tasks.json') as Record<string, { savedAt?: string }>;
+		expect(Object.keys(tasks).sort()).toEqual(['kept', 'legacy', 'task-1']);
+		expect(tasks.kept.savedAt).toBe(recent);
+		expect(tasks.legacy.savedAt).toBe(new Date(NOW).toISOString());
+		expect(tasks['task-1'].savedAt).toBe(new Date(NOW).toISOString());
 	});
 });
 
@@ -1172,6 +1241,16 @@ describe('getTask', () => {
 		expect(fake.requests).toHaveLength(1);
 		expect(fake.requests[0].method).toBe('GET');
 		expect(fake.requests[0].path).toBe('/api/tasks/task-1');
+	});
+
+	it('reads with the project write key as the bearer, as a write would', async () => {
+		const fake = await startFake(() => ({ status: 200, body: { task: TASK, nodes: [] } }));
+		seedHandle(fake.url);
+		const client = makeClient({ candidates: [DEAD] });
+
+		await client.getTask({ taskId: 'task-1' });
+
+		expect(fake.requests[0].headers.authorization).toBe('Bearer key-1');
 	});
 
 	it('uses the handle server only and never runs discovery', async () => {
@@ -1805,6 +1884,65 @@ describe('syncPrs', () => {
 		await client.syncPrs();
 
 		expect(fake.requests.some((r) => r.method === 'PATCH')).toBe(false);
+	});
+
+	const taskReads = (fake: { requests: { method: string; path: string }[] }) =>
+		fake.requests.filter((r) => r.method === 'GET' && r.path === '/api/tasks/task-1').length;
+
+	it('stops checking a task that has no PRs, until this client writes some', async () => {
+		const fake = await startFake(serving({ state: 'in_work', prs: [] }));
+		seedHandle(fake.url);
+		const client = makeClient({ runCommand: forge('OPEN') });
+
+		await client.syncPrs();
+		await client.syncPrs();
+		expect(taskReads(fake)).toBe(1);
+
+		await client.updateTask({ taskId: 'task-1', prs: [{ url: PR }] });
+		await client.syncPrs();
+		expect(taskReads(fake)).toBe(2);
+	});
+
+	it('stops checking a finished task', async () => {
+		const fake = await startFake(
+			serving({ state: 'done', finishedAt: T, prs: [{ url: PR, state: 'open' }] })
+		);
+		seedHandle(fake.url);
+		const run = forge('OPEN');
+		const client = makeClient({ runCommand: run });
+
+		await client.syncPrs();
+		await client.syncPrs();
+
+		expect(run).not.toHaveBeenCalled();
+		expect(taskReads(fake)).toBe(1);
+	});
+
+	it('stops checking a task the server will not show, but retries one it failed to reach', async () => {
+		const gone = await startFake(() => ({ status: 404, body: { error: 'task not found' } }));
+		seedHandle(gone.url);
+		const client = makeClient({ runCommand: forge('OPEN') });
+		await client.syncPrs();
+		await client.syncPrs();
+		expect(taskReads(gone)).toBe(1);
+
+		const down = await startFake(() => ({ status: 503, body: { error: 'down' } }));
+		seedHandle(down.url);
+		const other = makeClient({ runCommand: forge('OPEN') });
+		await other.syncPrs();
+		await other.syncPrs();
+		expect(taskReads(down)).toBe(2);
+	});
+
+	it('reads each task with the project write key as the bearer', async () => {
+		const fake = await startFake(serving({ state: 'review', prs: [{ url: PR, state: 'open' }] }));
+		seedHandle(fake.url);
+		const client = makeClient({ runCommand: forge('OPEN') });
+
+		await client.syncPrs();
+
+		const read = fake.requests.find((r) => r.path === '/api/tasks/task-1');
+		expect(read?.headers.authorization).toBe('Bearer key-1');
 	});
 
 	it('stops checking a task once all its PRs are merged or closed', async () => {

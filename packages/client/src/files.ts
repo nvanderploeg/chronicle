@@ -14,6 +14,21 @@ export interface TaskHandle {
 	server: string;
 	projectId: string;
 	projectUrl?: string;
+	savedAt?: string; // ISO time the handle was written
+}
+
+// Chronicle is a board of current work, not an archive: handles past this age are dropped.
+export const TASK_HANDLE_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+
+// A handle without `savedAt` is stamped now, so it ages out on the same clock as the rest.
+function pruneTasks(tasks: TasksFile, now: number): TasksFile {
+	const kept: TasksFile = {};
+	for (const [id, handle] of Object.entries(tasks)) {
+		const saved = Date.parse(handle?.savedAt ?? '');
+		if (Number.isNaN(saved)) kept[id] = { ...handle, savedAt: new Date(now).toISOString() };
+		else if (now - saved <= TASK_HANDLE_TTL_MS) kept[id] = handle;
+	}
+	return kept;
 }
 
 // The Runestone login file, shared by every Runestone tool on the machine. The refresh token
@@ -153,7 +168,7 @@ function withLock<T>(lockPath: string, run: () => Promise<T>): Promise<T> {
 
 export type Resolved<F> = { ok: true; entry: ProjectEntry; created: boolean } | F;
 
-export function createStore(configDir: string) {
+export function createStore(configDir: string, now: () => number = Date.now) {
 	const projectsPath = join(configDir, 'projects.json');
 	const tasksPath = join(configDir, 'tasks.json');
 	const lockPath = join(configDir, '.lock');
@@ -175,8 +190,9 @@ export function createStore(configDir: string) {
 			withLock(lockPath, () => putProject(server, repoKey, entry)),
 		saveTask: (taskId: string, handle: TaskHandle) =>
 			withLock(lockPath, async () => {
-				const tasks = await readJson<TaskHandle>(tasksPath);
-				tasks[taskId] = handle;
+				const at = now();
+				const tasks = pruneTasks(await readJson<TaskHandle>(tasksPath), at);
+				tasks[taskId] = { ...handle, savedAt: new Date(at).toISOString() };
 				await writeJson(tasksPath, tasks);
 			}),
 		// `replacing` names an entry the server rejected; it is replaced only if still current.

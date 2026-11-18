@@ -21,6 +21,12 @@ function keyMatches(token: string, project: ProjectRow): boolean {
 	return given.length === stored.length && timingSafeEqual(given, stored);
 }
 
+/** Whether the request's bearer is this Project's Write key. */
+export function holdsWriteKey(request: Request, project: ProjectRow): boolean {
+	const token = bearer(request);
+	return token !== undefined && keyMatches(token, project);
+}
+
 function checkKey(request: Request, project: ProjectRow): void {
 	const token = bearer(request);
 	if (!token) throw new ApiError(401, 'missing write key');

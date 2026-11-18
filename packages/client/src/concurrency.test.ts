@@ -224,7 +224,12 @@ describe('concurrent startTask', () => {
 			Object.fromEntries(
 				taskIds.map((id) => [
 					id,
-					{ server: fake.url, projectId: 'proj-1', projectUrl: `${fake.url}/p/proj-1` }
+					{
+						server: fake.url,
+						projectId: 'proj-1',
+						projectUrl: `${fake.url}/p/proj-1`,
+						savedAt: expect.any(String)
+					}
 				])
 			)
 		);
