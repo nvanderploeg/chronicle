@@ -1,6 +1,6 @@
 ---
 name: chronicle
-description: "Track multi-step work live on a chronicle dashboard. Use when starting work with 3 or more distinct steps that will run more than a few minutes or uses subagents; not for single-step answers, quick edits or pure Q&A."
+description: "Track work items live on a chronicle board. Use when work breaks into 3 or more items that each move through build and verify on their own."
 ---
 
 # Chronicle
