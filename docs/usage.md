@@ -51,10 +51,11 @@ as `skip`.
 
 ### Hooks
 
-With `--hooks`, Claude Code runs `chronicle hook` on four events. A session that never loads chronicle hears nothing from them. Once it does, they keep the task in front of the agent; they never block work, except to return a subagent launch once (below).
+With `--hooks`, Claude Code runs `chronicle hook` on four events. A session that never loads chronicle hears one thing from them: a single question at its third agent launch. Once it loads chronicle, they keep the task in front of the agent; they never block work, except to return a subagent launch once (below).
 
 | Situation | What the agent is told |
 | --- | --- |
+| Chronicle not loaded, third agent launched | Asked once whether the launches are separate work items that want a task, or steps toward one result. |
 | Loaded the skill or the tools, no `start_task` yet | Start the task and print its link, before more work. On the first three tool calls, then every fifth, and on each prompt. |
 | Task open, a user prompt arrives | The task id and link; keep it current, finish with `update_task`. |
 | Task open, 12 tool calls with no chronicle write | No update in 12 calls; update the step or finish the task. |

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { handleHook, QUIET_EVERY, type HookInput } from './hook.ts';
+import { ASK_AT, handleHook, QUIET_EVERY, type HookInput } from './hook.ts';
 
 const TASK = '8e609f7e-85c4-4dfd-916b-a84bb7efde63';
 const URL = `https://chronicle.example/p/proj/t/${TASK}`;
@@ -39,7 +39,7 @@ const startTask = post('mcp__chronicle__start_task', { tool_response: START_RESP
 const prompt: HookInput = { hook_event_name: 'UserPromptSubmit' };
 
 describe('sessions that never load chronicle', () => {
-	it('stay silent on every event and write no state', () => {
+	it('stay silent on prompts, ordinary tool calls and compaction, and write no state', () => {
 		const { dir, context } = session();
 
 		expect(context(prompt)).toBeUndefined();
@@ -53,6 +53,63 @@ describe('sessions that never load chronicle', () => {
 		context(post('ToolSearch', { tool_input: { query: 'select:WebFetch' } }));
 
 		expect(context(post('Bash'))).toBeUndefined();
+	});
+});
+
+describe('agents launched with no task', () => {
+	const launches = (context: (input: HookInput) => string | undefined, n: number) =>
+		Array.from({ length: n }, () => context(post('Agent')));
+
+	it(`asks once, at launch ${ASK_AT}, whether the work wants a task`, () => {
+		const { context } = session();
+
+		const told = launches(context, ASK_AT + 3);
+
+		expect(told.slice(0, ASK_AT - 1)).toEqual(Array(ASK_AT - 1).fill(undefined));
+		expect(told[ASK_AT - 1]).toMatch(
+			new RegExp(`^chronicle: ${ASK_AT} agents launched and no task`)
+		);
+		expect(told.slice(ASK_AT)).toEqual([undefined, undefined, undefined]);
+	});
+
+	it('leaves the choice open: separate work items start a task, steps toward one result carry on', () => {
+		const { context } = session();
+
+		const asked = launches(context, ASK_AT).at(-1);
+
+		expect(asked).toMatch(/separate work items, start a task/);
+		expect(asked).toMatch(/steps toward one result, carry on/);
+	});
+
+	it('does not count launches made inside a subagent', () => {
+		const { context } = session();
+
+		const told = Array.from({ length: ASK_AT + 1 }, () =>
+			context(post('Agent', { agent_id: 'agent-7' }))
+		);
+
+		expect(told).toEqual(Array(ASK_AT + 1).fill(undefined));
+	});
+
+	it('never asks a session whose task is already open', () => {
+		const { context } = session();
+		context(loadSkill);
+		context(startTask);
+
+		expect(launches(context, ASK_AT + 1)).toEqual(Array(ASK_AT + 1).fill(undefined));
+	});
+
+	it('never asks once start_task warned the server is unreachable', () => {
+		const { context } = session();
+		context(
+			post('mcp__chronicle__start_task', {
+				tool_response: [
+					{ type: 'text', text: 'chronicle: chronicle unreachable — continuing untracked' }
+				]
+			})
+		);
+
+		expect(launches(context, ASK_AT + 1)).toEqual(Array(ASK_AT + 1).fill(undefined));
 	});
 });
 

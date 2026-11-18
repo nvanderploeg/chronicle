@@ -28,10 +28,13 @@ export interface SessionState {
 	finished: boolean;
 	quiet: number;
 	waiting: number;
+	launches: number;
+	asked: boolean;
 	rejected?: string;
 }
 
 export const QUIET_EVERY = 12;
+export const ASK_AT = 3;
 const SESSION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
 // Keep in step with the finished kinds (done, failed, blocked, review) of the default preset.
@@ -42,11 +45,16 @@ const fresh = (): SessionState => ({
 	untracked: false,
 	finished: false,
 	quiet: 0,
-	waiting: 0
+	waiting: 0,
+	launches: 0,
+	asked: false
 });
 
 const noTask = () =>
 	'chronicle: loaded, but no task started. Call start_task with your plan now, before any more work, then print its url to the user as a link.';
+
+const unasked = (s: SessionState) =>
+	`chronicle: ${s.launches} agents launched and no task. If these are separate work items, start a task now with the chronicle skill. If they are steps toward one result, carry on.`;
 
 const openTask = (s: SessionState) =>
 	`chronicle: task ${s.taskId} is open (${s.url}). Update its steps as this work moves, and finish it with update_task.`;
@@ -177,6 +185,12 @@ export function step(
 					state: s,
 					output: s.quiet % QUIET_EVERY === 0 ? context(event, quietTask(s)) : null
 				};
+			}
+			if (tool === 'Agent' && !s.taskId && !s.untracked && !s.asked) {
+				s.launches += 1;
+				if (s.launches < ASK_AT) return { state: s, output: null };
+				s.asked = true;
+				return { state: s, output: context(event, unasked(s)) };
 			}
 			return { state: s, output: null };
 		}
